@@ -1,3 +1,14 @@
 <resources>
     <string name="app_name">Prism</string>
+
+    <!-- Accessibility service (screen shield) -->
+    <string name="accessibility_service_label">Prism Screen Shield</string>
+    <string name="accessibility_service_summary">Checks links before they open</string>
+    <string name="accessibility_service_description">Prism watches the screen for links in chats, e-mail and browsers, then checks each address with the same on-device scanner used by Manual Scan. Only the link is analysed - message text and keystrokes stay on your phone.</string>
+
+    <!-- Threat shield overlay -->
+    <string name="shield_badge_default">PRISM SHIELD</string>
+    <string name="shield_risk_label">RISK SCORE</string>
+    <string name="shield_reasons_label">Why this was flagged</string>
+    <string name="shield_footer">Prism AI · checked before the page opened</string>
 </resources>

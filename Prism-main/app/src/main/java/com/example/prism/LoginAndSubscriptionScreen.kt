@@ -645,6 +645,8 @@ fun DashboardScreen(
                             }
                         }
 
+                        ScreenMonitoringCard()
+
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(24.dp),

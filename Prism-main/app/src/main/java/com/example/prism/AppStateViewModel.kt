@@ -12,6 +12,9 @@ import com.example.prism.data.ScanHistoryEntity
 import com.example.prism.data.ScanRepository
 import com.example.prism.data.ScanSource
 import com.example.prism.data.UrlKeys
+import com.example.prism.net.ApiClient
+import com.example.prism.net.ApiException
+import com.example.prism.net.AuthResult
 import com.example.prism.scan.ManualScanAnalyzer
 import com.example.prism.scan.PhoneNumbers
 import com.example.prism.scan.UrlMlModel
@@ -19,6 +22,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.time.Duration.Companion.milliseconds
 
 class AppStateViewModel(application: Application) : AndroidViewModel(application) {
@@ -207,25 +211,38 @@ class AppStateViewModel(application: Application) : AndroidViewModel(application
         isLoggingIn = true
 
         viewModelScope.launch {
-            delay(1500.milliseconds)
-
-            sharedPrefs.edit().apply {
-                putBoolean("prism_logged_in", true)
-                putString("prism_email", loginEmail)
-                apply()
-            }
-
-            isLoggedIn = true
-            isLoggingIn = false
-
-            val savedPlan = sharedPrefs.getString("prism_plan", null)
-            if (savedPlan == null) {
-                showSubscriptionModal = true
-            } else {
-                onLoginSuccess("Welcome back! You are now logged in securely.")
+            try {
+                val r = withContext(Dispatchers.IO) { ApiClient.login(loginEmail.trim(), loginPassword) }
+                saveSession(r)
+                isLoggedIn = true
+                subscriptionPlan = r.plan?.let { SubscriptionPlan.valueOf(it) }
+                if (r.plan == null) {
+                    showSubscriptionModal = true
+                } else {
+                    onLoginSuccess("Welcome back! You are now logged in securely.")
+                }
+            } catch (e: Exception) {
+                onValidationError(friendlyError(e))
+            } finally {
+                isLoggingIn = false
             }
         }
     }
+
+    /** Stores the server session (token, profile, plan) so the app stays logged in after a restart. */
+    private fun saveSession(r: AuthResult) {
+        sharedPrefs.edit().apply {
+            putBoolean("prism_logged_in", true)
+            putString("prism_token", r.token)
+            putString("prism_email", r.email)
+            putString("prism_name", r.name)
+            if (r.plan != null) putString("prism_plan", r.plan) else remove("prism_plan")
+            apply()
+        }
+    }
+
+    private fun friendlyError(e: Exception): String =
+        if (e is ApiException) e.message ?: "Request failed" else "Cannot reach the server. Check your connection."
 
     fun handlePlanSelection(plan: SubscriptionPlan, onMessage: (String, String) -> Unit) {
         subscriptionPlan = plan
@@ -236,6 +253,14 @@ class AppStateViewModel(application: Application) : AndroidViewModel(application
         }
 
         showSubscriptionModal = false
+
+        // Tell the server too (best effort: the plan is already saved locally)
+        val token = sharedPrefs.getString("prism_token", null)
+        if (token != null) {
+            viewModelScope.launch {
+                runCatching { withContext(Dispatchers.IO) { ApiClient.setPlan(token, plan.name) } }
+            }
+        }
 
         if (plan == SubscriptionPlan.FREE) {
             onMessage("Welcome to Prism!", "You can upgrade anytime for advanced features.")
@@ -266,21 +291,20 @@ class AppStateViewModel(application: Application) : AndroidViewModel(application
         isSigningUp = true
 
         viewModelScope.launch {
-            delay(1500.milliseconds)
-
-            sharedPrefs.edit().apply {
-                putBoolean("prism_logged_in", true)
-                putString("prism_email", signUpEmail)
-                putString("prism_name", signUpName)
-                apply()
+            try {
+                val r = withContext(Dispatchers.IO) {
+                    ApiClient.signup(signUpName.trim(), signUpEmail.trim(), signUpPassword)
+                }
+                saveSession(r)
+                isLoggedIn = true
+                showSignUp = false
+                showSubscriptionModal = true
+                onSignUpSuccess("Account created successfully!", "Now choose your protection plan.")
+            } catch (e: Exception) {
+                onValidationError(friendlyError(e))
+            } finally {
+                isSigningUp = false
             }
-
-            isLoggedIn = true
-            isSigningUp = false
-            showSignUp = false
-            showSubscriptionModal = true
-
-            onSignUpSuccess("Account created successfully!", "Now choose your protection plan.")
         }
     }
 

@@ -7,4 +7,15 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <!-- Prism Screen Shield overlay -->
+    <color name="shield_scrim">#F20B1220</color>
+    <color name="shield_danger">#FFDC2626</color>
+    <color name="shield_warning">#FFD97706</color>
+    <color name="shield_ink">#FF111827</color>
+    <color name="shield_body">#FF4B5563</color>
+    <color name="shield_muted">#FF6B7280</color>
+    <color name="shield_track">#FFE5E7EB</color>
+    <color name="shield_url_bg">#FFF9FAFB</color>
+    <color name="shield_stroke">#FFE5E7EB</color>
 </resources>
