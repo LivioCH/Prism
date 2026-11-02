@@ -1,0 +1,13 @@
+cd "C:\Users\livio\OneDrive\Dokumen\kuliah\skripsi\Prism\Prism-main"
+.\gradlew.bat installDebug
+& "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" shell am start -n com.example.prism/.MainActivity
+
+Run the backend (only if you want to try it)
+cd "C:\Users\livio\OneDrive\Dokumen\kuliah\skripsi\Prism\prism-backend"
+npm start
+
+Save changes to GitHub
+cd "C:\Users\livio\OneDrive\Dokumen\kuliah\skripsi\Prism"
+git add -A
+git commit -m "describe your change"
+git push

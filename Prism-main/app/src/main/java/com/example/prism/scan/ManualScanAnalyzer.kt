@@ -5,7 +5,7 @@ import com.example.prism.ScanType
 import com.example.prism.ThreatLevel
 import com.example.prism.UrlScanner
 
-/** What Manual Scan found. Texts are English. */
+/** What Manual Scan found. URL reasons are English; phone and scam-wording reasons are Traditional Chinese. */
 data class ManualScanOutcome(
     val kind: ScanType,                 // detected input kind: URL, MESSAGE (text) or PHONE
     val threat: ThreatLevel,
@@ -20,7 +20,7 @@ data class UrlResult(val url: String, val mlProbability: Double?, val threat: Th
  * Single entry point of Manual Scan. Detects the input kind by itself:
  *  - one URL        -> ML model + old heuristic scanner, worst verdict wins
  *  - text/message   -> every URL inside is scored like above, plus scam-wording signals
- *  - phone number   -> heuristic rules ONLY (there is no ML dataset for phone numbers)
+ *  - phone number   -> Taiwan-focused heuristic rules ONLY (there is no ML dataset for phone numbers)
  * Everything is offline.
  */
 object ManualScanAnalyzer {
@@ -32,13 +32,21 @@ object ManualScanAnalyzer {
     )
     private const val TRAILING = ".,;:!?)）。，、；：！？」"
 
-    /** Common scam wording (Traditional Chinese). Each distinct word adds [WORD_POINTS]. */
-    internal val SCAM_WORDS = listOf(
-        "中獎", "急", "驗證", "帳號異常", "帳戶異常", "點擊連結", "立即", "凍結", "停用",
-        "領取", "退款", "補貼", "匯款", "轉帳", "限時", "包裹"
+    /** One group of Traditional-Chinese scam wording. [strong] categories weigh more than weak ones. */
+    internal data class ScamCategory(val rule: String, val label: String, val strong: Boolean, val phrases: List<String>)
+
+    internal val SCAM_CATEGORIES = listOf(
+        ScamCategory("scam_urgency", "急迫性", false, listOf("立即", "馬上", "盡快", "24小時", "逾期", "緊急", "最後通知")),
+        ScamCategory("scam_account_threat", "帳號威脅", true, listOf("帳號異常", "帳號將被凍結", "帳號停用", "身分驗證", "重新驗證")),
+        ScamCategory("scam_prize_bait", "中獎誘餌", true, listOf("中獎", "得獎", "免費領取", "紅包", "抽中")),
+        ScamCategory("scam_money", "金錢", true, listOf("退款", "退稅", "匯款", "轉帳", "補繳", "手續費", "解除分期付款")),
+        ScamCategory("scam_credentials", "憑證/連結", true, listOf("點擊連結", "請登入", "驗證碼", "輸入密碼", "輸入OTP", "信用卡")),
+        ScamCategory("scam_parcel", "包裹物流", false, listOf("包裹", "無法配送", "地址有誤", "重新配送", "補件"))
     )
-    private const val WORD_POINTS = 15
-    private const val WARNING_AT = 30
+    private const val STRONG_POINTS = 20       // first phrase of a strong category
+    private const val WEAK_POINTS = 10         // first phrase of a weak category
+    private const val EXTRA_PHRASE_POINTS = 5  // each further phrase of the same category (max 2)
+    private const val WARNING_AT = 20
     private const val DANGER_AT = 70
 
     fun detectKind(input: String): ScanType {
@@ -104,77 +112,130 @@ object ManualScanAnalyzer {
 
     private fun shortHost(url: String) = url.substringAfter("://").substringBefore('/').substringBefore('?').take(40)
 
+    /** Result of the scam-wording check for one message. */
+    internal data class WordCheck(val points: Int, val categories: List<ScamCategory>, val reasons: List<ScanReason>)
+
+    internal fun checkScamWords(text: String): WordCheck {
+        val reasons = mutableListOf<ScanReason>()
+        val hitCategories = mutableListOf<ScamCategory>()
+        var total = 0
+        for (c in SCAM_CATEGORIES) {
+            val hits = c.phrases.filter { text.contains(it, ignoreCase = true) }
+            if (hits.isEmpty()) continue
+            hitCategories += c
+            val pts = (if (c.strong) STRONG_POINTS else WEAK_POINTS) + minOf(2, hits.size - 1) * EXTRA_PHRASE_POINTS
+            total += pts
+            reasons += ScanReason(c.rule, "偵測到${c.label}用語：${hits.joinToString("、")}", pts,
+                if (pts >= 30) "high" else if (pts >= 15) "medium" else "low")
+        }
+        // Several different categories together are far more typical for a scam than one category alone
+        total += when (hitCategories.size) { 0, 1 -> 0; 2 -> 8; else -> 15 }
+        return WordCheck(minOf(100, total), hitCategories, reasons)
+    }
+
     private fun analyzeText(text: String, model: UrlMlModel?, advanced: Boolean, blocklist: Set<String>): ManualScanOutcome {
         val urls = extractUrls(text)
         val results = urls.map { evaluateUrl(it, model, advanced, blocklist) }
         val info = mutableListOf<String>()
         val reasons = mutableListOf<ScanReason>()
 
-        // Scam wording in the message itself
-        val hits = SCAM_WORDS.filter { text.contains(it) }
-        val wordPoints = minOf(100, hits.size * WORD_POINTS)
-        var threat = when {
-            wordPoints >= DANGER_AT -> ThreatLevel.DANGER
-            wordPoints >= WARNING_AT -> ThreatLevel.WARNING
+        // 1) Scam wording, grouped by category
+        val words = checkScamWords(text)
+        reasons += words.reasons
+        var wordThreat = when {
+            words.points >= DANGER_AT -> ThreatLevel.DANGER
+            words.points >= WARNING_AT -> ThreatLevel.WARNING
             else -> ThreatLevel.SAFE
         }
-        if (hits.isNotEmpty()) {
-            reasons += ScanReason("scam_words", "Message contains common scam wording: ${hits.take(5).joinToString(", ")}", wordPoints,
-                if (wordPoints >= 35) "high" else if (wordPoints >= 15) "medium" else "low")
-        }
 
-        info += if (urls.isEmpty()) "No URLs found in the message" else "Found ${urls.size} URL(s) in the message"
+        // 2) Every URL goes through the existing URL pipeline (heuristics + ML); the worst one counts
+        info += if (urls.isEmpty()) "訊息中未發現網址" else "訊息中找到 ${urls.size} 個網址"
+        var urlThreat = ThreatLevel.SAFE
         for (r in results) {
-            threat = worse(threat, r.threat)
+            urlThreat = worse(urlThreat, r.threat)
             val h = shortHost(r.url)
             if (r.mlProbability != null) info += "ML: ${percent(r.mlProbability)}% phishing probability ($h)"
             for (x in r.reasons) if (x.rule != "no_issues") reasons += x.copy(detail = "($h) ${x.detail}")
         }
-        if (hits.size >= 2 && results.any { it.threat != ThreatLevel.SAFE }) {
-            threat = ThreatLevel.DANGER
-            reasons += ScanReason("scam_words_with_link", "Scam wording combined with a suspicious link: very dangerous", 40, "high")
+
+        // 3) Combine. DANGEROUS from a bad link needs several signals together: wording from at least
+        //    two categories (one of them strong, e.g. account threat / money / credentials).
+        val strongCats = words.categories.count { it.strong }
+        if (urlThreat != ThreatLevel.SAFE && words.categories.size >= 2 && strongCats >= 1) {
+            wordThreat = ThreatLevel.DANGER
+            reasons += ScanReason("scam_words_with_link", "詐騙用語結合可疑連結，風險極高，請勿點擊或提供資料", 40, "high")
         }
+        val threat = worse(wordThreat, urlThreat)
         if (reasons.isEmpty()) {
-            reasons += ScanReason("no_issues", "No obvious suspicious features (no suspicious URLs or common scam wording)", 0, "low")
+            reasons += ScanReason("no_issues", "未發現可疑網址或常見詐騙用語", 0, "low")
         }
         return ManualScanOutcome(ScanType.MESSAGE, threat, sorted(reasons), info, results)
     }
 
-    // ---------------------------------------------------------------- phone
+    // ---------------------------------------------------------------- phone (Taiwan heuristics)
 
-    // Calling codes that are common for real contacts
-    private val COMMON_CODES = setOf("1", "7", "20", "27", "30", "31", "32", "33", "34", "39", "41", "43", "44", "45", "46", "47", "48", "49",
-        "52", "54", "55", "56", "60", "61", "62", "63", "64", "65", "66", "81", "82", "84", "86", "91", "92", "94", "852", "853", "886", "971")
-    // Codes often used in "one ring" / callback scams
+    private val TW_MOBILE = Regex("^09\\d{8}$")
+    // Valid Taiwan area codes, longest first so "0826" wins over "082" and "08"
+    private val TW_AREA_CODES = listOf("0826", "0836", "037", "049", "089", "082", "02", "03", "04", "05", "06", "07", "08")
+    private const val PHONE_NOTE = "此為啟發式判斷，非官方資料庫"
+
+    /** Domestic Taiwan format: mobile 09 + 8 digits, or a valid area code with 9-10 digits in total. */
+    internal fun isTaiwanFormat(domestic: String): Boolean {
+        if (TW_MOBILE.matches(domestic)) return true
+        if (domestic.length !in 9..10 || !domestic.all { it.isDigit() }) return false
+        return TW_AREA_CODES.any { domestic.startsWith(it) && domestic.length - it.length >= 5 }
+    }
+
+    // Calling codes often used in "one ring" / callback scams
     private val RISKY_CODES = setOf("225", "232", "234", "236", "242", "243", "252", "257", "375", "592", "809", "876")
-
-    private fun callingCode(digits: String): String? =
-        (3 downTo 1).map { digits.take(it) }.firstOrNull { it in COMMON_CODES || it in RISKY_CODES }
 
     private fun analyzePhone(raw: String): ManualScanOutcome {
         val reasons = mutableListOf<ScanReason>()
         fun add(rule: String, pts: Int, detail: String) {
             reasons += ScanReason(rule, detail, pts, if (pts >= 35) "high" else if (pts >= 15) "medium" else "low")
         }
-        var digits = raw.filter { it.isDigit() }
-        var international = raw.startsWith("+")
+        // Normalise: drop spaces, hyphens and brackets
+        val compact = raw.filterNot { it.isWhitespace() || it == '-' || it == '(' || it == ')' }
+        var international = compact.startsWith("+")
+        var digits = compact.filter { it.isDigit() }
         if (!international && digits.startsWith("00")) { international = true; digits = digits.drop(2) }
 
-        if (digits.length < 7) add("too_short", 30, "Number is too short (only ${digits.length} digits)")
-        if (digits.length > 15) add("too_long", 30, "Number is too long (${digits.length} digits), beyond the international standard")
-        if (international && digits.length >= 4) {
-            val code = callingCode(digits)
-            when {
-                code != null && code in RISKY_CODES -> add("risky_country", 25, "Country code +$code is common in callback scams (one ring, then hang up)")
-                code == null -> add("unusual_country", 25, "Unusual country code +${digits.take(3)}, be careful")
+        if (compact.drop(1).any { !it.isDigit() }) add("odd_chars", 10, "號碼含有異常字元")
+        if (digits.length < 8) add("too_short", 25, "號碼長度異常：只有 ${digits.length} 位數字（太短）")
+        if (digits.length > 15) add("too_long", 25, "號碼長度異常：共 ${digits.length} 位數字，超過國際標準上限")
+
+        var validTaiwan = false
+        if (international) {
+            if (digits.startsWith("886")) {
+                val rest = digits.drop(3)
+                val asDomestic = if (rest.startsWith("0")) rest else "0$rest"
+                if (isTaiwanFormat(asDomestic)) {
+                    add("fake_local_intl", 40, "國際冒充本地號碼 (+886)：這是台灣本地格式的號碼卻以國際號碼顯示，是常見的詐騙手法")
+                } else {
+                    add("odd_tw_intl", 20, "+886 後面的號碼不符合台灣號碼格式")
+                }
+                if (rest.startsWith("0")) add("leading_zero", 10, "+886 後多出一個 0，格式不正確")
+            } else if (digits.length >= 4) {
+                val code = (3 downTo 1).map { digits.take(it) }.firstOrNull { it in RISKY_CODES }
+                add("foreign_number", 20, "來自非預期的國際號碼 (+${code ?: digits.take(3)})")
+                if (code != null) add("risky_country", 10, "國碼 +$code 常見於「響一聲」回撥詐騙")
             }
+        } else if (isTaiwanFormat(digits)) {
+            validTaiwan = true
+            add("no_issues", 0, "符合台灣手機或市話號碼格式")
+        } else if (digits.length in 8..15) {
+            add("not_tw_format", 10, "不符合台灣常見的手機或市話號碼格式")
         }
-        if (Regex("(\\d)\\1{5,}").containsMatchIn(digits)) add("repeated_digits", 15, "Number has repeated digits in a row")
-        val asc = "0123456789"
-        if ((0..digits.length - 6).any { i -> digits.substring(i, i + 6).let { it in asc || it.reversed() in asc } }) {
-            add("sequential_digits", 15, "Number has sequential digits")
+
+        // Pattern checks are skipped for numbers that already match a valid Taiwan format
+        if (!validTaiwan && digits.isNotEmpty()) {
+            val asc = "0123456789"
+            val allSame = digits.length >= 4 && digits.all { it == digits[0] }
+            val repeated = Regex("(\\d)\\1{5,}").containsMatchIn(digits)
+            val sequential = digits.length >= 6 && (0..digits.length - 6).any { i -> digits.substring(i, i + 6).let { it in asc || it.reversed() in asc } }
+            if (allSame || repeated || sequential) add("odd_pattern", 10, "號碼格式異常：含有重複或連續的數字")
         }
-        if (reasons.isEmpty()) add("no_issues", 0, "No obvious suspicious features (normal length and format)")
+        if (reasons.isEmpty()) add("no_issues", 0, "未發現明顯可疑特徵")
 
         val score = minOf(100, reasons.sumOf { it.points })
         val threat = when {
@@ -182,6 +243,6 @@ object ManualScanAnalyzer {
             score >= 25 -> ThreatLevel.WARNING
             else -> ThreatLevel.SAFE
         }
-        return ManualScanOutcome(ScanType.PHONE, threat, sorted(reasons), listOf("Phone number checks use heuristic rules only, not an official database"))
+        return ManualScanOutcome(ScanType.PHONE, threat, sorted(reasons), listOf(PHONE_NOTE))
     }
 }
