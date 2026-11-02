@@ -1,0 +1,9 @@
+{
+  "features": ["url_length","host_length","num_dots","num_hyphens","num_digits","num_special","num_slashes","has_ip","has_at","num_subdomains","sus_tld","has_keyword","digit_ratio","double_slash"],
+  "mean": [50.722931,17.163201,2.060217,1.126046,4.764312,1.088646,2.445278,0.01036,0.003741,0.516747,0.01446,0.089586,0.073509,0.003315],
+  "scale": [44.433653,11.590249,1.511409,2.419462,11.529034,3.196747,1.59679,0.101256,0.061048,1.049698,0.119379,0.285588,0.109914,0.057483],
+  "coef": [0.246567,0.59394,0.611423,-1.183024,0.518584,-0.510091,-0.098884,0.543574,0.149501,-0.550301,0.335254,1.224941,0.223452,0.273256],
+  "intercept": -0.092686,
+  "sus_tld": ["cf","click","country","download","ga","gq","icu","info","loan","ml","online","racing","stream","tk","top","win","work","xyz"],
+  "keywords": ["login","secure","verify","account","update","bank","signin","sign-in","webscr","confirm","password","ebayisapi","paypal","wp-content","admin","cmd="]
+}

@@ -1,0 +1,48 @@
+*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+Konteks: project Prism.AI (Android, Kotlin, lokal). Sudah ada database Room+SQLCipher dengan tabel scan_history, whitelist, url_cache, dan alur whitelist → cache → heuristik → ML → simpan. JANGAN ubah logika heuristik/ML, 14 ciri, atau url_model.json.
+
+=== 1. DATABASE: tambah BLACKLIST ===
+Tabel baru blacklist (id, value = host/URL, created_at, unik per value).
+
+=== 2. ALUR BARU di ScanRepository (urutan PERSIS) ===
+normalisasi → cek BLACKLIST (jika cocok: verdict DANGEROUS, alasan "使用者已封鎖此網站", skip heuristik/ML) → cek whitelist (jika cocok: SAFE, alasan "使用者已信任此網址") → cek cache → heuristik+ML → simpan.
+Blacklist diperiksa PALING AWAL dan menang atas yang lain. Hubungkan juga ke aturan "blocklisted" yang sudah ada di UrlScanner (yang sekarang menganggur).
+
+=== 3. TOMBOL DI POPUP HASIL: tepat 3 tombol ===
+Ganti tombol popup menjadi tiga, selalu tampil:
+- "Trust this site"      → warna HIJAU
+- "Blacklist this site"  → warna MERAH
+- "I Understand"         → warna PUTIH/netral (hanya menutup popup, tanpa konfirmasi)
+Tombol Trust dan Blacklist WAJIB memunculkan dialog konfirmasi dulu sebelum menyimpan:
+- Trust: "確定要信任此網站嗎？之後將不再警告此網址。" dengan pilihan [確定] / [取消].
+- Blacklist: "確定要封鎖此網站嗎？之後此網址將一律標記為危險。" dengan [確定] / [取消].
+Hanya kedua tombol itu yang pakai konfirmasi; "I Understand" tidak.
+(Catatan: jika popup lama punya tombol "Clear Clipboard & Close", gabungkan aksinya ke "I Understand", jangan ada tombol keempat.)
+
+=== 4. LAYAR KELOLA (frontend untuk SQL lokal) — di tab Privacy ===
+Tampilkan DUA daftar yang dibaca langsung dari database:
+- "信任清單 (Trusted)" → semua baris whitelist.
+- "封鎖清單 (Blacklisted)" → semua baris blacklist.
+Tiap baris menampilkan URL/host + tombol "移除". Menekan "移除" MENGHAPUS baris itu dari database (benar-benar operasi DELETE di SQL), dan daftar langsung ter-update.
+Tujuannya: pengguna bisa membatalkan Trust/Blacklist yang tidak sengaja dibuat.
+
+=== VERIFIKASI (laporkan hasilnya) ===
+1. Scan https://www.google.com → SAFE. Tap "Blacklist this site" → muncul konfirmasi → 確定 → scan lagi → DANGEROUS ("使用者已封鎖此網站").
+2. Buka tab Privacy → google.com muncul di 封鎖清單 → tap 移除 → hilang → scan google lagi → kembali SAFE/ML.
+3. Tap "Trust this site" pada suatu URL → konfirmasi → muncul di 信任清單 → bisa di-移除 juga.
+4. Konfirmasi "取消" tidak menyimpan apa pun.
+5. Unit test lolos + pohon folder file yang diubah.
