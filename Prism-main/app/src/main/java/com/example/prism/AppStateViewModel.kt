@@ -13,6 +13,7 @@ import com.example.prism.data.ScanRepository
 import com.example.prism.data.ScanSource
 import com.example.prism.data.UrlKeys
 import com.example.prism.scan.ManualScanAnalyzer
+import com.example.prism.scan.PhoneNumbers
 import com.example.prism.scan.UrlMlModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -82,6 +83,7 @@ class AppStateViewModel(application: Application) : AndroidViewModel(application
     }
 
     init {
+        PhoneNumbers.init(application)
         checkSavedSession()
         observeDatabase()
     }

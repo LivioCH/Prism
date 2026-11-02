@@ -33,6 +33,10 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
+    testOptions {
+        // puts the merged assets (incl. the libphonenumber metadata) on the unit-test classpath
+        unitTests.isIncludeAndroidResources = true
+    }
     buildFeatures {
         compose = true
     }
@@ -62,6 +66,8 @@ dependencies {
     ksp(libs.androidx.room.compiler)
     implementation(libs.androidx.sqlite.ktx)
     implementation(libs.sqlcipher.android)
+    // Phone number parsing/validation for the whole world (offline metadata in the AAR assets)
+    implementation(libs.libphonenumber.android)
     // org.json is only a stub in JVM unit tests, so tests need the real library
     testImplementation(libs.org.json)
 }

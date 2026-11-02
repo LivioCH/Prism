@@ -4,6 +4,7 @@ import com.example.prism.ScanReason
 import com.example.prism.ScanType
 import com.example.prism.ThreatLevel
 import com.example.prism.scan.ManualScanAnalyzer
+import com.example.prism.scan.PhoneTestSetup
 import com.example.prism.scan.UrlMlModel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -57,6 +58,8 @@ private class FakeCache : UrlCacheDao {
 }
 
 class ScanRepositoryTest {
+    init { PhoneTestSetup.init() }
+
     private val model = UrlMlModel.fromJson(File("src/main/assets/url_model.json").readText())
     private val history = FakeHistory()
     private val whitelist = FakeWhitelist()

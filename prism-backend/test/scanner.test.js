@@ -31,7 +31,7 @@ for (const url of ['https://www.google.com', 'https://github.com', 'https://www.
       const r = run(url, advanced);
       assert.equal(r.verdict, 'SAFE', `${url} -> ${r.verdict} (${r.score})`);
       assert.ok(r.reasons.length >= 1, 'SAFE must still carry a reason');
-      assert.match(r.reasons[0].detail, /未發現明顯可疑特徵/);
+      assert.match(r.reasons[0].detail, /No obvious suspicious features/);
     });
   }
 }
@@ -133,19 +133,19 @@ test('Taiwan phone: valid mobile and landline formats are SAFE', () => {
   }
 });
 
-test('Taiwan phone: +886 with a local-looking number is flagged (fake local)', () => {
-  const r = phone('+886912345678');
-  assert.notEqual(r.threat, 'SAFE');
-  assert.ok(r.reasons.some((x) => x.rule === 'fake_local_intl' && x.detail.includes('國際冒充本地號碼')));
+test('Taiwan phone: +886 is a valid international format and is NOT flagged', () => {
+  assert.equal(phone('+886912345678').threat, 'SAFE');
+  assert.equal(phone('+886 2 2345 6789').threat, 'SAFE');
+  assert.ok(phone('+886912345678').reasons.every((x) => x.rule !== 'fake_local_intl'));
 });
 
-test('Taiwan phone: other country codes and odd patterns are suspicious', () => {
-  const a = phone('+1 900 0000');
-  assert.notEqual(a.threat, 'SAFE');
-  assert.ok(a.reasons.some((x) => x.rule === 'foreign_number'));
-  assert.ok(phone('+44 20 7946 0958').reasons.some((x) => x.rule === 'foreign_number'));
-  assert.ok(phone('+225 07 12 34 56 78').reasons.some((x) => x.rule === 'risky_country'));
-  assert.notEqual(phone('1234').threat, 'SAFE'); // too short
+test('Phone: valid numbers from other countries are not flagged just for being foreign', () => {
+  for (const n of ['+62 812 3456 7890', '+44 20 7946 0958', '+81 3 1234 5678']) {
+    const r = phone(n);
+    assert.equal(r.threat, 'SAFE', n);
+    assert.ok(r.reasons.every((x) => x.rule !== 'foreign_number' && x.rule !== 'risky_country'), n);
+  }
+  assert.notEqual(phone('1234').threat, 'SAFE'); // still too short
 });
 
 test('Chinese wording: harmless message is SAFE', () => {

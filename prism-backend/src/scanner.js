@@ -264,7 +264,7 @@ export function scanUrl(raw, ctx) {
 
   // Nothing found -> give the SAFE card a neutral positive reason instead of an empty list.
   if (!signals.length) {
-    signals.push(reason('no_issues', 0, 'No obvious suspicious features', '未發現明顯可疑特徵（使用 HTTPS、網域結構正常）'));
+    signals.push(reason('no_issues', 0, 'No obvious suspicious features', 'No obvious suspicious features（使用 HTTPS、網域結構正常）'));
   }
   return finish(signals, URL_THRESHOLDS);
 }
@@ -276,7 +276,6 @@ const NANP_CARIBBEAN = new Set(['242', '246', '264', '268', '284', '340', '345',
 const TW_AREA = ['0826', '0836', '037', '049', '089', '082', '02', '03', '04', '05', '06', '07', '08'];
 const isTwDomestic = (d) =>
   /^09[0-9]{8}$/.test(d) || (d.length >= 9 && d.length <= 10 && TW_AREA.some((a) => d.startsWith(a) && d.length - a.length >= 5));
-const RISKY_CALLING_CODES = ['225', '232', '234', '236', '242', '243', '252', '257', '375', '592', '809', '876'];
 
 export function scanPhone(raw, { blocklist }) {
   const { digits, plus } = normalizePhone(raw);
@@ -302,23 +301,8 @@ export function scanPhone(raw, { blocklist }) {
     signals.push({ id: 'intl_no_plus', weight: 10, text: 'International-length number without + prefix' });
   }
 
-  // Taiwan heuristics (reasons in Traditional Chinese; same rules and weights as the Android app)
-  const intl = plus || digits.startsWith('00');
-  const intlDigits = !plus && digits.startsWith('00') ? digits.slice(2) : digits;
-  const validTw = !intl && isTwDomestic(digits);
-  if (intl && intlDigits.startsWith('886')) {
-    const rest = intlDigits.slice(3);
-    if (isTwDomestic(rest.startsWith('0') ? rest : '0' + rest)) {
-      signals.push({ id: 'fake_local_intl', weight: 40, text: '國際冒充本地號碼 (+886)：這是台灣本地格式的號碼卻以國際號碼顯示，是常見的詐騙手法' });
-    } else {
-      signals.push({ id: 'odd_tw_intl', weight: 20, text: '+886 後面的號碼不符合台灣號碼格式' });
-    }
-    if (rest.startsWith('0')) signals.push({ id: 'leading_zero', weight: 10, text: '+886 後多出一個 0，格式不正確' });
-  } else if (intl && intlDigits.length >= 4) {
-    const code = RISKY_CALLING_CODES.find((c) => intlDigits.startsWith(c));
-    signals.push({ id: 'foreign_number', weight: 20, text: `來自非預期的國際號碼 (+${code ?? intlDigits.slice(0, 3)})` });
-    if (code) signals.push({ id: 'risky_country', weight: 10, text: `國碼 +${code} 常見於「響一聲」回撥詐騙` });
-  }
+  // Valid numbers from any country are fine; digit patterns only matter for numbers that are not a valid Taiwan format
+  const validTw = !(plus || digits.startsWith('00')) && isTwDomestic(digits);
   if (!validTw) {
     const asc = '0123456789';
     const seq = digits.length >= 6 && [...Array(digits.length - 5).keys()].some((i) => {
@@ -326,7 +310,7 @@ export function scanPhone(raw, { blocklist }) {
       return asc.includes(w) || asc.includes([...w].reverse().join(''));
     });
     const repeated = /(.)\1{5,}/.test(digits) || (digits.length >= 4 && new Set(digits).size === 1);
-    if (seq || repeated) signals.push({ id: 'odd_pattern', weight: 10, text: '號碼格式異常：含有重複或連續的數字' });
+    if (seq || repeated) signals.push({ id: 'odd_pattern', weight: 10, text: 'Unusual number pattern: repeated or sequential digits' });
   }
   return finish(signals);
 }
@@ -344,12 +328,12 @@ const MESSAGE_RULES = [
 ];
 // Traditional-Chinese scam wording, grouped by category. Strong categories weigh more than weak ones.
 const ZH_CATEGORIES = [
-  { id: 'zh_urgency', label: '急迫性', strong: false, phrases: ['立即', '馬上', '盡快', '24小時', '逾期', '緊急', '最後通知'] },
-  { id: 'zh_account_threat', label: '帳號威脅', strong: true, phrases: ['帳號異常', '帳號將被凍結', '帳號停用', '身分驗證', '重新驗證'] },
-  { id: 'zh_prize_bait', label: '中獎誘餌', strong: true, phrases: ['中獎', '得獎', '免費領取', '紅包', '抽中'] },
-  { id: 'zh_money', label: '金錢', strong: true, phrases: ['退款', '退稅', '匯款', '轉帳', '補繳', '手續費', '解除分期付款'] },
-  { id: 'zh_credentials', label: '憑證/連結', strong: true, phrases: ['點擊連結', '請登入', '驗證碼', '輸入密碼', '輸入OTP', '信用卡'] },
-  { id: 'zh_parcel', label: '包裹物流', strong: false, phrases: ['包裹', '無法配送', '地址有誤', '重新配送', '補件'] },
+  { id: 'zh_urgency', label: 'Urgency', strong: false, phrases: ['立即', '馬上', '盡快', '24小時', '逾期', '緊急', '最後通知'] },
+  { id: 'zh_account_threat', label: 'Account threat', strong: true, phrases: ['帳號異常', '帳號將被凍結', '帳號停用', '身分驗證', '重新驗證'] },
+  { id: 'zh_prize_bait', label: 'Prize bait', strong: true, phrases: ['中獎', '得獎', '免費領取', '紅包', '抽中'] },
+  { id: 'zh_money', label: 'Money', strong: true, phrases: ['退款', '退稅', '匯款', '轉帳', '補繳', '手續費', '解除分期付款'] },
+  { id: 'zh_credentials', label: 'Credentials/links', strong: true, phrases: ['點擊連結', '請登入', '驗證碼', '輸入密碼', '輸入OTP', '信用卡'] },
+  { id: 'zh_parcel', label: 'Parcel/delivery', strong: false, phrases: ['包裹', '無法配送', '地址有誤', '重新配送', '補件'] },
 ];
 function scanChineseWording(raw) {
   const signals = [];
@@ -358,11 +342,11 @@ function scanChineseWording(raw) {
     const found = c.phrases.filter((ph) => raw.toLowerCase().includes(ph.toLowerCase()));
     if (!found.length) continue;
     hit.push(c);
-    signals.push({ id: c.id, weight: (c.strong ? 20 : 10) + Math.min(2, found.length - 1) * 5, text: `偵測到${c.label}用語：${found.join('、')}` });
+    signals.push({ id: c.id, weight: (c.strong ? 20 : 10) + Math.min(2, found.length - 1) * 5, text: `${c.label} wording detected: ${found.join(', ')}` });
   }
   // Several different categories together are far more typical for a scam than one alone
   const bonus = hit.length >= 3 ? 15 : hit.length === 2 ? 8 : 0;
-  if (bonus) signals.push({ id: 'zh_combined', weight: bonus, text: `同時出現 ${hit.length} 類詐騙用語` });
+  if (bonus) signals.push({ id: 'zh_combined', weight: bonus, text: `Scam wording from ${hit.length} different categories` });
   return { signals, categories: hit };
 }
 const URL_IN_TEXT = /\b((?:https?:\/\/|www\.)[^\s<>"']+|[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|info|xyz|top|click|work|support|zip|tk|ml|ga|cf|gq|me|io|co)\b[^\s<>"']*)/gi;
@@ -381,7 +365,7 @@ export function scanMessage(raw, ctx) {
       signals.push({ id: 'bad_link', weight: Math.min(60, worst.score), text: 'Contains a suspicious link' });
       // A bad link plus wording from >= 2 categories (one strong) is a clear scam
       if (zh.categories.length >= 2 && zh.categories.some((c) => c.strong)) {
-        signals.push({ id: 'scam_words_with_link', weight: 40, text: '詐騙用語結合可疑連結，風險極高，請勿點擊或提供資料' });
+        signals.push({ id: 'scam_words_with_link', weight: 40, text: 'Scam wording combined with a suspicious link: very dangerous, do not click or share any details' });
       }
     } else {
       signals.push({ id: 'has_link', weight: 5, text: 'Contains a link' });
