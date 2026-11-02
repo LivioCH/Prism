@@ -122,3 +122,45 @@ test('a real ?gclid= in the query is not flagged as a path parameter; controls s
   assert.ok(!run('https://www.google.com/?gclid=abc').reasons.some((x) => x.rule === 'tracking_in_path'));
   for (const u of ['https://www.google.com', 'https://github.com']) assert.equal(run(u).verdict, 'SAFE');
 });
+
+// ---------- Taiwan phone + Traditional-Chinese wording ----------
+const phone = (n) => scan('PHONE', n, { blocklist: new Set(), advanced: false });
+const msg = (t) => scan('MESSAGE', t, { blocklist: new Set(), advanced: false });
+
+test('Taiwan phone: valid mobile and landline formats are SAFE', () => {
+  for (const n of ['0912345678', '0912-345-678', '0912 345 678', '(02) 2345-6789', '02-23456789', '037-123456', '049-2345678']) {
+    assert.equal(phone(n).threat, 'SAFE', n);
+  }
+});
+
+test('Taiwan phone: +886 with a local-looking number is flagged (fake local)', () => {
+  const r = phone('+886912345678');
+  assert.notEqual(r.threat, 'SAFE');
+  assert.ok(r.reasons.some((x) => x.rule === 'fake_local_intl' && x.detail.includes('國際冒充本地號碼')));
+});
+
+test('Taiwan phone: other country codes and odd patterns are suspicious', () => {
+  const a = phone('+1 900 0000');
+  assert.notEqual(a.threat, 'SAFE');
+  assert.ok(a.reasons.some((x) => x.rule === 'foreign_number'));
+  assert.ok(phone('+44 20 7946 0958').reasons.some((x) => x.rule === 'foreign_number'));
+  assert.ok(phone('+225 07 12 34 56 78').reasons.some((x) => x.rule === 'risky_country'));
+  assert.notEqual(phone('1234').threat, 'SAFE'); // too short
+});
+
+test('Chinese wording: harmless message is SAFE', () => {
+  assert.equal(msg('明天見面嗎').threat, 'SAFE');
+});
+
+test('Chinese wording: bad link + account threat + urgency is DANGER', () => {
+  const r = msg('您的帳號異常，請立即點擊 http://plurebo-verify.xyz 驗證');
+  assert.equal(r.threat, 'DANGER');
+  assert.ok(r.reasons.some((x) => x.rule === 'zh_account_threat' && x.detail.includes('帳號異常')));
+  assert.ok(r.reasons.some((x) => x.rule === 'zh_urgency' && x.detail.includes('立即')));
+});
+
+test('Chinese wording without a link: prize bait is SUSPICIOUS, one weak category alone is SAFE', () => {
+  assert.equal(msg('恭喜中獎，請提供信用卡領取').threat, 'WARNING');
+  assert.equal(msg('您的帳號異常，請立即處理').threat, 'WARNING');
+  assert.equal(msg('我的包裹到了嗎').threat, 'SAFE');
+});
