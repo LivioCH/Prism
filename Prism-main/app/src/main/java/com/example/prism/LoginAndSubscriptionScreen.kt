@@ -409,7 +409,8 @@ fun DashboardScreen(
     whitelist: List<String> = emptyList(),          // hosts the user trusts (from the database)
     onRemoveWhitelist: (String) -> Unit = {},
     blacklist: List<String> = emptyList(),          // hosts the user blocked (from the database)
-    onRemoveBlacklist: (String) -> Unit = {}
+    onRemoveBlacklist: (String) -> Unit = {},
+    linkCheckContent: @Composable () -> Unit = {}   // Google link check card shown under Manual Scan
 ) {
     val isPlus = subscriptionPlan == SubscriptionPlan.PLUS
 
@@ -702,6 +703,8 @@ fun DashboardScreen(
                             }
                         }
 
+                        // Google link check card (Web Risk via prism-backend), supplied by MainActivity
+                        linkCheckContent()
 
                         if (scanHistory.isNotEmpty()) {
                             Card(

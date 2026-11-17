@@ -9,6 +9,8 @@ export const config = {
   jwtSecret: process.env.JWT_SECRET || 'dev-only-secret-change-me',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '30d',
   databasePath: process.env.DATABASE_PATH || './data/prism.db',
+  // Google Cloud Web Risk link check (POST /api/scans/webrisk). Without a key that route answers 503.
+  webRiskApiKey: process.env.WEB_RISK_API_KEY || '',
 };
 
 // Mirrors the plan cards in the app (FREE vs PLUS $4.99/month).

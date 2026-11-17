@@ -8,13 +8,17 @@ import { HttpError } from './errors.js';
 import { authRoutes } from './routes/auth.js';
 import { meRoutes } from './routes/me.js';
 import { scanRoutes } from './routes/scans.js';
+import { config } from './config.js';
+import { createWebRiskDetector } from './webrisk.js';
 
-export function createApp(db) {
+export function createApp(db, { linkChecker } = {}) {
   const app = express();
   app.disable('x-powered-by');
   app.use(helmet());
   app.use(cors());
   app.use(express.json({ limit: '32kb' }));
+
+  const webRisk = linkChecker ?? (config.webRiskApiKey ? createWebRiskDetector({ apiKey: config.webRiskApiKey }) : null);
 
   app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
@@ -29,7 +33,7 @@ export function createApp(db) {
   const auth = requireAuth(db);
   app.use('/api/auth', authLimiter, authRoutes(db));
   app.use('/api', auth, meRoutes(db));
-  app.use('/api/scans', auth, scanRoutes(db));
+  app.use('/api/scans', auth, scanRoutes(db, webRisk));
 
   app.use((_req, _res, next) => next(new HttpError(404, 'not_found', 'Route not found')));
 

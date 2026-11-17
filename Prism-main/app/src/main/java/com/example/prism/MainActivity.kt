@@ -105,7 +105,16 @@ fun AntiPhishingMainScreen(viewModel: AppStateViewModel) {
         whitelist = viewModel.whitelistItems.toList(),
         onRemoveWhitelist = { viewModel.removeFromWhitelist(it) },
         blacklist = viewModel.blacklistItems.toList(),
-        onRemoveBlacklist = { viewModel.removeFromBlacklist(it) }
+        onRemoveBlacklist = { viewModel.removeFromBlacklist(it) },
+        linkCheckContent = {
+            LinkCheckCard(
+                text = viewModel.linkCheckText,
+                onTextChange = { viewModel.linkCheckText = it; viewModel.linkCheckError = null },
+                isChecking = viewModel.isLinkChecking,
+                error = viewModel.linkCheckError,
+                onCheck = { viewModel.handleLinkCheck() }
+            )
+        }
     )
 
     // 5. Threat Overlay Dialog Alert: Connects the real ThreatAlertDialog from loginandsubscription.kt

@@ -78,6 +78,11 @@ class AppStateViewModel(application: Application) : AndroidViewModel(application
     var whitelistItems = mutableStateListOf<String>()
     var blacklistItems = mutableStateListOf<String>()
 
+    // Google link check (Web Risk through prism-backend; the API key lives on the server)
+    var linkCheckText by mutableStateOf("")
+    var isLinkChecking by mutableStateOf(false)
+    var linkCheckError by mutableStateOf<String?>(null)
+
 
     // Opened off the main thread: the encrypted database must not block the UI
     private val repoDeferred = viewModelScope.async(Dispatchers.IO) {
@@ -381,6 +386,71 @@ class AppStateViewModel(application: Application) : AndroidViewModel(application
             threatAlertSource = res.source
             threatAlertData = newScan
             showThreatAlert = true
+        }
+    }
+
+    /**
+     * Google link check: sends a link, or a message with links, to prism-backend, which checks each
+     * link with Google Cloud Web Risk. The verdict is saved to History and opens the same popup as
+     * Manual Scan. A failed call shows an error and never a "safe" result.
+     */
+    fun handleLinkCheck() {
+        val text = linkCheckText.trim()
+        linkCheckError = null
+        if (text.isEmpty()) {
+            linkCheckError = "Paste a link or a message with links"
+            return
+        }
+        val token = sharedPrefs.getString("prism_token", null)
+        if (token == null) {
+            linkCheckError = "Please log in again to use the Google link check"
+            return
+        }
+        isLinkChecking = true
+
+        viewModelScope.launch {
+            try {
+                val r = withContext(Dispatchers.IO) { ApiClient.webRiskCheck(token, text) }
+                val threat = if (r.isDangerous) ThreatLevel.DANGER else ThreatLevel.SAFE
+                val reasons = r.reasons.map { (line, listed) ->
+                    ScanReason("web_risk", line, if (listed) 100 else 0, if (listed) "high" else "low")
+                }
+                val type = if (text.any { it.isWhitespace() }) ScanType.MESSAGE else ScanType.URL
+                val now = System.currentTimeMillis()
+                withContext(Dispatchers.IO) {
+                    repoDeferred.await().first.historyDao().insert(
+                        ScanHistoryEntity(
+                            input = text,
+                            kind = DbMap.kind(type),
+                            verdict = DbMap.verdict(threat),
+                            mlScore = null,
+                            reasons = ReasonsJson.encode(reasons),
+                            timestamp = now
+                        )
+                    )
+                }
+                linkCheckText = ""
+
+                threatAlertSource = ScanSource.FRESH
+                threatAlertData = ScanResult(
+                    id = now.toString(),
+                    type = type,
+                    content = text,
+                    threat = threat,
+                    timestamp = now,
+                    details = r.details,
+                    reasons = reasons,
+                    infoLines = listOf(
+                        "Checked online by Google Web Risk",
+                        "Not listed means Google hasn't reported the site, not that it is proven safe"
+                    )
+                )
+                showThreatAlert = true
+            } catch (e: Exception) {
+                linkCheckError = friendlyError(e)
+            } finally {
+                isLinkChecking = false
+            }
         }
     }
 

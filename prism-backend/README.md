@@ -43,6 +43,7 @@ All `/api/*` routes except `/api/auth/*` need `Authorization: Bearer <token>`. E
 | `POST /api/scans` | `{type:"url"\|"phone"\|"message",content,source?:"manual"\|"clipboard"}` | 201 -> `{scan,signals[],showAlert}` |
 | `GET /api/scans?limit=50&before=<ts>` | | Newest first. `nextBefore` is the cursor, `null` at the end |
 | `DELETE /api/scans/:id`, `DELETE /api/scans` | | |
+| `POST /api/scans/webrisk` | `{text}` (a link, or a message with links) | 201 -> `{scan,isDangerous,results[]}`. Google Web Risk link check, see below |
 | `POST /api/scans/report` | `{type:"url"\|"phone",content}` | 3 distinct reporters -> indicator is blocklisted |
 | `DELETE /api/me` | `{password}` | Deletes account and all data |
 | `GET /health` | | |
@@ -61,6 +62,16 @@ Scanning before picking a plan returns 402 `plan_required`.
 `src/scanner.js` is rule-based: URLs (IP hosts, `@` tricks, punycode, risky TLDs, shorteners, brand impersonation, sensitive keywords, no HTTPS), phone numbers (premium-rate, "one-ring" area codes, repeated digits), and messages (urgency, OTP/credential requests, gift cards/crypto, prize bait, delivery scams, embedded links). Scores map to SAFE (<25), WARNING (25-59), DANGER (60+). Plus a blocklist seeded with a few fake domains and fed by user reports.
 
 This is a good v1, **not** a threat-intelligence feed. For real coverage, add Google Safe Browsing / PhishTank / VirusTotal inside `scanUrl()` and push a signal.
+
+## Google link check (Web Risk)
+
+`POST /api/scans/webrisk` finds up to 10 links in the text and checks each one with the [Google Cloud Web Risk Lookup API](https://cloud.google.com/web-risk/docs/lookup-api) for phishing (`SOCIAL_ENGINEERING`), `MALWARE` and `UNWANTED_SOFTWARE`. Any listed link makes the scan DANGER. The verdict is saved like any other scan (`source: "webrisk"`). The API key lives only in the server's environment as `WEB_RISK_API_KEY`, never in the app.
+
+- Create the key in Google Cloud Console (APIs & Services > Credentials) on a project with the Web Risk API enabled and billing set up.
+- No key set: 503 `webrisk_unavailable`. Google fails or times out: 502 `webrisk_failed`. A failed check is never reported as safe.
+- Text without links: 400 `no_links`. Web Risk only knows links, not message wording or screenshots.
+- "Not listed" means Google hasn't reported the site yet, not that it is proven safe. New phishing sites often aren't listed.
+- Counts toward the FREE daily limit.
 
 ## Hooking up the Android app
 
