@@ -1,0 +1,10 @@
+_backup/
+.idea/
+node_modules/
+build/
+.gradle/
+.kotlin/
+local.properties
+.env
+*.iml
+.DS_Store
