@@ -338,6 +338,23 @@ object UrlTextParser {
         }
     }
 
+    /**
+     * Hosts that the redirect parameters of [query] point to (same rules as [isOpenRedirect]).
+     * An empty string stands for a redirect whose host could not be read.
+     */
+    fun redirectHosts(query: String): List<String> {
+        if (query.isBlank()) return emptyList()
+        return query.split('&').mapNotNull { parameter ->
+            val key = parameter.substringBefore('=').lowercase(Locale.ROOT)
+            if (key !in REDIRECT_PARAM_KEYS) return@mapNotNull null
+            val value = decode(parameter.substringAfter('=', ""))
+            val isRedirect = value.contains("://") || value.startsWith("//") ||
+                (value.contains('.') && hostOf(value)?.contains('.') == true)
+            if (!isRedirect) return@mapNotNull null
+            hostOf(if (value.startsWith("//")) "https:$value" else value).orEmpty()
+        }
+    }
+
     private fun decode(value: String): String =
         try {
             java.net.URLDecoder.decode(value, "UTF-8")

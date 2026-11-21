@@ -93,6 +93,17 @@ test('without WEB_RISK_API_KEY the route answers 503', async () => {
   assert.equal(r.json.error.code, 'webrisk_unavailable');
 });
 
+test('scanner: a brand domain inside an official login link is not a hidden redirect', async () => {
+  const { scan } = await import('../src/scanner.js');
+  const ctx = { blocklist: new Set(), advanced: false };
+  const login = 'https://www.facebook.com/oidc/?app_id=1&redirect_uri=https%3A%2F%2Fwww.instagram.com%2Faccounts%2Fsignupviafb%2F&response_type=code';
+  const r = scan('URL', login, ctx);
+  assert.equal(r.threat, 'SAFE');
+  assert.ok(!r.reasons.some((x) => x.rule === 'embedded_url'));
+  const bounce = scan('URL', 'https://www.facebook.com/l.php?u=http%3A%2F%2Fevil-login.xyz%2Fverify', ctx);
+  assert.ok(bounce.reasons.some((x) => x.rule === 'embedded_url' && x.detail.includes('evil-login.xyz')));
+});
+
 test('links are pulled out of a message', () => {
   assert.deepEqual(
     extractLinks('Go to https://a.com/x?y=1, then www.b.org. Also c-d.xyz/login! Mail me@e.com, open f.pdf'),

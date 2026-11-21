@@ -84,6 +84,14 @@ object UrlScanner {
     /** True if [raw] can be scanned as a link (used by the UI to show a friendly message instead). */
     fun isValidUrl(raw: String): Boolean = parse(raw) != null
 
+    /** True if [raw] is on a brand's own domain (e.g. www.facebook.com) with no "@" trick in front of it. */
+    fun isOfficialBrandSite(raw: String): Boolean {
+        val p = parse(raw) ?: return false
+        return !p.hasUserInfo && isBrandDomain(registrableDomain(p.host))
+    }
+
+    private fun isBrandDomain(domain: String) = BRANDS.values.any { domain in it }
+
     private fun registrableDomain(host: String): String {
         val labels = host.split('.')
         if (labels.size <= 2) return host
@@ -132,6 +140,8 @@ object UrlScanner {
             if (prev == '@') continue // handled by the "@" rule
             val domain = registrableDomain(host)
             if (domain == frontDomain || found.any { it.domain == domain }) continue
+            // A brand's own domain inside the address (Facebook login returning to instagram.com) is not a hidden scam target
+            if (isBrandDomain(domain)) continue
             found += Hidden(host, domain, prev == '=' || HTTP_PREFIX.containsMatchIn(m.value))
         }
         return found

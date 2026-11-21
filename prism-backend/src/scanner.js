@@ -95,6 +95,8 @@ function findHiddenDomains(url, frontDomain) {
     if (prev === '@') continue; // handled by the "@" rule
     const domain = registrableDomain(host);
     if (domain === frontDomain || found.some((f) => f.domain === domain)) continue;
+    // A brand's own domain inside the address (Facebook login returning to instagram.com) is not a hidden scam target
+    if (Object.values(BRANDS).some((d) => d.includes(domain))) continue;
     found.push({ host, domain, strong: prev === '=' || /^https?:\/\//i.test(m[0]) });
   }
   return found;

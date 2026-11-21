@@ -230,7 +230,9 @@ object UrlHeuristics {
 
         val scheme = parts.scheme.lowercase(Locale.ROOT)
         val hasUserInfo = !UrlTextParser.userInfoOf(url).isNullOrBlank()
-        val openRedirect = UrlTextParser.isOpenRedirect(parts.query)
+        // A redirect counts only when it can leave the trusted providers (a Facebook login that returns to
+        // instagram.com is normal; one that returns to evil.tk is not).
+        val openRedirect = UrlTextParser.redirectHosts(parts.query).any { it.isEmpty() || !isTrustedHost(it) }
         val isIpHost = UrlTextParser.isIpLiteral(host)
 
         // Fast lane: a recognised provider (and no redirect/@ trick to hijack it).

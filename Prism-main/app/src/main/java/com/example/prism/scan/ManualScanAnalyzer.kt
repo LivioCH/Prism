@@ -14,7 +14,13 @@ data class ManualScanOutcome(
     val urlResults: List<UrlResult> = emptyList()
 )
 
-data class UrlResult(val url: String, val mlProbability: Double?, val threat: ThreatLevel, val reasons: List<ScanReason>)
+data class UrlResult(
+    val url: String,
+    val mlProbability: Double?,
+    val threat: ThreatLevel,
+    val reasons: List<ScanReason>,
+    val mlIgnored: Boolean = false   // true on a brand's official site, where the ML score may not raise the verdict
+)
 
 /**
  * Single entry point of Manual Scan. Detects the input kind by itself:
@@ -106,7 +112,11 @@ object ManualScanAnalyzer {
     internal fun evaluateUrl(url: String, model: UrlMlModel?, advanced: Boolean, blocklist: Set<String> = emptySet()): UrlResult {
         val heuristic = UrlScanner.scan(url, advanced, blocklist)
         val p = model?.predict(url.trim().filterNot { it.isWhitespace() })
-        val mlT = if (p == null) ThreatLevel.SAFE else mlThreat(p)
+        // The ML model only sees the shape of an address (length, digits, words like "account"), so it rates
+        // long login links on a brand's own site (facebook.com/oidc/?...) as phishing. There it may not raise
+        // the verdict; the heuristics still check for hidden domains and "@" tricks on those sites.
+        val mlIgnored = p != null && UrlScanner.isOfficialBrandSite(url)
+        val mlT = if (p == null || mlIgnored) ThreatLevel.SAFE else mlThreat(p)
         val threat = worse(heuristic.threat, mlT)
         var reasons = heuristic.reasons
         // The "nothing found" reason must not stay next to a warning raised by the ML model.
@@ -117,12 +127,15 @@ object ManualScanAnalyzer {
                 if (mlT == ThreatLevel.DANGER) "high" else "medium"
             )
         }
-        return UrlResult(url, p, threat, sorted(reasons))
+        return UrlResult(url, p, threat, sorted(reasons), mlIgnored)
     }
+
+    private fun mlLine(r: UrlResult): String =
+        "ML: ${percent(r.mlProbability!!)}% phishing probability" + if (r.mlIgnored) " (not used: official site)" else ""
 
     private fun analyzeSingleUrl(url: String, model: UrlMlModel?, advanced: Boolean, blocklist: Set<String>): ManualScanOutcome {
         val r = evaluateUrl(url, model, advanced, blocklist)
-        val info = if (r.mlProbability != null) listOf("ML: ${percent(r.mlProbability)}% phishing probability") else emptyList()
+        val info = if (r.mlProbability != null) listOf(mlLine(r)) else emptyList()
         return ManualScanOutcome(ScanType.URL, r.threat, r.reasons, info, listOf(r))
     }
 
@@ -183,7 +196,7 @@ object ManualScanAnalyzer {
         for (r in results) {
             urlThreat = worse(urlThreat, r.threat)
             val h = shortHost(r.url)
-            if (r.mlProbability != null) info += "ML: ${percent(r.mlProbability)}% phishing probability ($h)"
+            if (r.mlProbability != null) info += "${mlLine(r)} ($h)"
             for (x in r.reasons) if (x.rule != "no_issues") reasons += x.copy(detail = "($h) ${x.detail}")
         }
 
