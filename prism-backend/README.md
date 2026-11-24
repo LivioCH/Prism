@@ -72,6 +72,7 @@ This is a good v1, **not** a threat-intelligence feed. For real coverage, add Go
 - Text without links: 400 `no_links`. Web Risk only knows links, not message wording or screenshots.
 - "Not listed" means Google hasn't reported the site yet, not that it is proven safe. New phishing sites often aren't listed.
 - Counts toward the FREE daily limit.
+- `source: "screen"` / `"clipboard"` are the app's automatic checks (Screen Shield, Auto-Protection). They answer 200 with `scan: null` and a top-level `details`, are not saved, and don't count toward the daily limit. `clipboard` needs PLUS (403 `upgrade_required`), like `/api/scans`. Known gap: a FREE user could send `source: "screen"` to skip the daily limit.
 
 ## Hooking up the Android app
 

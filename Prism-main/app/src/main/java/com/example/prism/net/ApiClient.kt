@@ -21,6 +21,8 @@ object ApiClient {
 
     // A link check waits on Google for every link in the message, so it gets more than the normal 8 s
     private const val WEB_RISK_TIMEOUT_MS = 30_000
+    // Automatic checks (Screen Shield, clipboard) must not keep the user waiting; on timeout the on-device verdict stands
+    const val AUTO_CHECK_TIMEOUT_MS = 5_000
 
     private fun call(method: String, path: String, body: JSONObject? = null, token: String? = null, timeoutMs: Int = 8000): JSONObject {
         val conn = URL(BASE_URL + path).openConnection() as HttpURLConnection
@@ -74,9 +76,13 @@ object ApiClient {
         call("PUT", "/api/subscription", JSONObject().put("plan", plan), token)
     }
 
-    /** Google Web Risk check of a link, or of every link in a message, through the backend. */
-    fun webRiskCheck(token: String, text: String): WebRiskResult =
-        parseWebRisk(call("POST", "/api/scans/webrisk", JSONObject().put("text", text), token, WEB_RISK_TIMEOUT_MS))
+    /**
+     * Google Web Risk check of a link, or of every link in a message, through the backend.
+     * [source] is "manual" (Google Link Check card, saved on the server) or "screen" / "clipboard"
+     * (automatic checks, not saved on the server).
+     */
+    fun webRiskCheck(token: String, text: String, source: String = "manual", timeoutMs: Int = WEB_RISK_TIMEOUT_MS): WebRiskResult =
+        parseWebRisk(call("POST", "/api/scans/webrisk", JSONObject().put("text", text).put("source", source), token, timeoutMs))
 
     internal fun parseWebRisk(json: JSONObject): WebRiskResult {
         val results = json.getJSONArray("results")
@@ -91,6 +97,8 @@ object ApiClient {
             }
             "${r.getString("url")}: $verdict" to listed
         }
-        return WebRiskResult(json.getBoolean("isDangerous"), json.getJSONObject("scan").getString("details"), reasons)
+        // "details" is top-level; manual checks also carry it inside the saved "scan"
+        val details = json.optString("details").ifEmpty { json.getJSONObject("scan").getString("details") }
+        return WebRiskResult(json.getBoolean("isDangerous"), details, reasons)
     }
 }

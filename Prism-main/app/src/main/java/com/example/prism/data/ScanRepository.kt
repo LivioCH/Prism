@@ -80,7 +80,15 @@ class ScanRepository(
         const val CACHE_REASON = "Result from cache"
     }
 
-    suspend fun scan(input: String, analyze: (String) -> ManualScanOutcome): RepoScanResult {
+    /**
+     * @param cacheable whether a fresh result may be cached. A result whose Google check could not run
+     *   is not cached, so Google is asked again next time instead of trusting it for 7 days.
+     */
+    suspend fun scan(
+        input: String,
+        cacheable: (ManualScanOutcome) -> Boolean = { true },
+        analyze: (String) -> ManualScanOutcome
+    ): RepoScanResult {
         val text = input.trim()                                          // 1. normalise
         val kind = ManualScanAnalyzer.detectKind(text)
         var source = ScanSource.FRESH
@@ -123,7 +131,7 @@ class ScanRepository(
 
         val result = outcome ?: analyze(text)                            // 5. heuristics + ML (unchanged)
 
-        if (source == ScanSource.FRESH && kind == ScanType.URL) {        // 6a. remember it
+        if (source == ScanSource.FRESH && kind == ScanType.URL && cacheable(result)) {   // 6a. remember it
             cache.put(
                 UrlCacheEntity(
                     key = UrlKeys.cacheKey(text),

@@ -18,6 +18,8 @@ const reportSchema = z.object({
 });
 const webRiskSchema = z.object({
   text: z.string().trim().min(1, 'Paste a link or a message with links').max(4000),
+  // manual = Google Link Check card; screen / clipboard = automatic checks by the app
+  source: z.enum(['manual', 'screen', 'clipboard']).default('manual'),
 });
 const listSchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
@@ -76,17 +78,23 @@ export function scanRoutes(db, webRisk = null) {
   // of phishing, malware and unwanted-software sites. A failed API call is an error (502), never "safe".
   r.post('/webrisk', async (req, res, next) => {
     try {
-      const { text } = webRiskSchema.parse(req.body);
+      const { text, source } = webRiskSchema.parse(req.body);
       const user = req.user;
       if (!user.plan) throw new HttpError(402, 'plan_required', 'Choose a plan to start scanning');
       if (!webRisk) throw new HttpError(503, 'webrisk_unavailable', 'Google link check is not set up on the server (WEB_RISK_API_KEY is missing)');
       const plan = PLANS[user.plan];
+      if (source === 'clipboard' && !plan.clipboardScan) {
+        throw new HttpError(403, 'upgrade_required', 'Clipboard monitoring is a Prism Plus feature', { feature: 'clipboard' });
+      }
+      // Automatic checks run in the background for every link the user sees or copies. The app keeps
+      // their history itself, so they are not saved here and don't use up the FREE daily scans.
+      const automatic = source !== 'manual';
 
       const links = extractLinks(text);
       if (!links.length) throw new HttpError(400, 'no_links', 'No links found. Google Web Risk only checks links');
 
       const now = Date.now();
-      if (plan.dailyScanLimit !== Infinity) {
+      if (!automatic && plan.dailyScanLimit !== Infinity) {
         const { c } = db.prepare('SELECT COUNT(*) AS c FROM scans WHERE user_id = ? AND created_at > ?').get(user.id, now - DAY_MS);
         if (c >= plan.dailyScanLimit) {
           throw new HttpError(429, 'daily_limit', `Free plan is limited to ${plan.dailyScanLimit} scans per day`, { limit: plan.dailyScanLimit, feature: 'unlimited_scans' });
@@ -113,14 +121,19 @@ export function scanRoutes(db, webRisk = null) {
       }));
       const type = /\s/.test(text) ? 'MESSAGE' : 'URL';
 
-      const id = randomUUID();
-      db.prepare(
-        `INSERT INTO scans (id, user_id, type, content, threat, details, score, signals, source, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'webrisk', ?)`
-      ).run(id, user.id, type, text, threat, details, flagged.length ? 100 : 0, JSON.stringify(signals), now);
+      let scan = null;
+      if (!automatic) {
+        const id = randomUUID();
+        db.prepare(
+          `INSERT INTO scans (id, user_id, type, content, threat, details, score, signals, source, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'webrisk', ?)`
+        ).run(id, user.id, type, text, threat, details, flagged.length ? 100 : 0, JSON.stringify(signals), now);
+        scan = publicScan(db.prepare('SELECT * FROM scans WHERE id = ?').get(id));
+      }
 
-      res.status(201).json({
-        scan: publicScan(db.prepare('SELECT * FROM scans WHERE id = ?').get(id)),
+      res.status(automatic ? 200 : 201).json({
+        scan,                                 // null for automatic checks (not saved)
+        details,
         isDangerous: flagged.length > 0,
         results,
       });

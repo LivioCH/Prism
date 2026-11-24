@@ -86,6 +86,24 @@ test('text without links is rejected, not called safe', async () => {
   assert.equal((await call(base, 'POST', '/api/scans/webrisk', { body: { text: 'https://a.com' } })).status, 401);
 });
 
+test('automatic checks are not saved and skip the FREE daily limit; clipboard needs Plus', async () => {
+  const token = await newUser(base, 'FREE');
+  fake.fail = false; fake.listed = { 'https://evil.test/login': ['SOCIAL_ENGINEERING'] };
+  for (let i = 0; i < 12; i++) {                       // more than the 10 FREE scans a day
+    const r = await call(base, 'POST', '/api/scans/webrisk', { token, body: { text: 'https://evil.test/login', source: 'screen' } });
+    assert.equal(r.status, 200);
+    assert.equal(r.json.scan, null);
+    assert.equal(r.json.isDangerous, true);
+    assert.equal(r.json.details, 'Google lists evil.test as a phishing site');
+  }
+  assert.equal((await call(base, 'GET', '/api/scans', { token })).json.scans.length, 0);
+  const clip = await call(base, 'POST', '/api/scans/webrisk', { token, body: { text: 'https://a.com', source: 'clipboard' } });
+  assert.equal(clip.status, 403);
+  assert.equal(clip.json.error.code, 'upgrade_required');
+  const plus = await newUser(base, 'PLUS');
+  assert.equal((await call(base, 'POST', '/api/scans/webrisk', { token: plus, body: { text: 'https://a.com', source: 'clipboard' } })).status, 200);
+});
+
 test('without WEB_RISK_API_KEY the route answers 503', async () => {
   const token = await newUser(plainBase);
   const r = await call(plainBase, 'POST', '/api/scans/webrisk', { token, body: { text: 'https://a.com' } });

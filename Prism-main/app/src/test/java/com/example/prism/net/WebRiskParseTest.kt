@@ -29,6 +29,16 @@ class WebRiskParseTest {
     }
 
     @Test
+    fun automaticCheckReadsTopLevelDetails() {
+        val r = ApiClient.parseWebRisk(JSONObject("""
+            {"scan":null,"details":"Google lists evil.test as a phishing site","isDangerous":true,
+             "results":[{"url":"https://evil.test","threatTypes":["SOCIAL_ENGINEERING"],"threats":["phishing"]}]}
+        """))
+        assertTrue(r.isDangerous)
+        assertEquals("Google lists evil.test as a phishing site", r.details)
+    }
+
+    @Test
     fun unlistedLinkIsNotDangerous() {
         val r = ApiClient.parseWebRisk(JSONObject("""
             {"isDangerous":false,"scan":{"details":"This link is not on Google's list of dangerous sites"},

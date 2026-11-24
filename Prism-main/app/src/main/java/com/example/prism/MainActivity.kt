@@ -1,6 +1,9 @@
 package com.example.prism
 
 import com.example.prism.data.ScanSource
+import android.content.ClipDescription
+import android.content.ClipboardManager
+import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -14,6 +17,42 @@ import androidx.compose.ui.platform.LocalContext
 
 class MainActivity : ComponentActivity() {
     private val viewModel: AppStateViewModel by viewModels()
+
+    // Auto-Protection: Android only lets an app read the clipboard while it is open and focused, so the
+    // clipboard is checked when Prism comes to the front and whenever it changes while Prism is open.
+    private val clipboard by lazy { getSystemService(ClipboardManager::class.java) }
+    private val clipChanged = ClipboardManager.OnPrimaryClipChangedListener { checkClipboard() }
+    private var lastClipStamp = -1L
+
+    override fun onResume() {
+        super.onResume()
+        clipboard?.addPrimaryClipChangedListener(clipChanged)
+    }
+
+    override fun onPause() {
+        clipboard?.removePrimaryClipChangedListener(clipChanged)
+        super.onPause()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) checkClipboard()
+    }
+
+    private fun checkClipboard() {
+        if (!viewModel.clipboardMonitoring || !viewModel.isLoggedIn) return
+        val cm = clipboard ?: return
+        // The description can be read without Android's "Prism pasted from your clipboard" notice;
+        // the clip itself is only read when it is new text.
+        val desc = cm.primaryClipDescription ?: return
+        if (!desc.hasMimeType(ClipDescription.MIMETYPE_TEXT_PLAIN) && !desc.hasMimeType(ClipDescription.MIMETYPE_TEXT_HTML)) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            if (desc.timestamp == lastClipStamp) return
+            lastClipStamp = desc.timestamp
+        }
+        val text = runCatching { cm.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString() }.getOrNull() ?: return
+        viewModel.autoScanClipboard(text)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -116,6 +155,9 @@ fun AntiPhishingMainScreen(viewModel: AppStateViewModel) {
             )
         }
     )
+
+    // Plan picker: after sign-up the app lands here, so the picker must be shown here too
+    SubscriptionPlanDialog(viewModel, onPlanMessage = showToast)
 
     // 5. Threat Overlay Dialog Alert: Connects the real ThreatAlertDialog from loginandsubscription.kt
     if (viewModel.showThreatAlert && viewModel.threatAlertData != null) {

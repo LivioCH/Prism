@@ -136,6 +136,17 @@ class ScanRepositoryTest {
     }
 
     @Test
+    fun uncacheableResultIsAnalysedAgainButStillSaved() {
+        // e.g. the Google check could not run: next scan must ask again instead of using the cache
+        val first = runBlocking { repo.scan("https://www.google.com", cacheable = { false }) { analyzed++; ManualScanAnalyzer.analyze(it, model) } }
+        assertEquals(ScanSource.FRESH, first.source)
+        assertTrue(cache.rows.isEmpty())
+        assertEquals(1, history.rows.value.size)
+        assertEquals(ScanSource.FRESH, scan("https://www.google.com").source)
+        assertEquals(2, analyzed)
+    }
+
+    @Test
     fun expiredCacheEntryIsAnalysedAgain() {
         scan("https://www.google.com")
         clock += ScanRepository.CACHE_TTL_MS + 1

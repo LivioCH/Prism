@@ -15,6 +15,7 @@ import com.example.prism.data.UrlKeys
 import com.example.prism.net.ApiClient
 import com.example.prism.net.ApiException
 import com.example.prism.net.AuthResult
+import com.example.prism.scan.GoogleCheck
 import com.example.prism.scan.ManualScanAnalyzer
 import com.example.prism.scan.PhoneNumbers
 import com.example.prism.scan.UrlMlModel
@@ -204,6 +205,16 @@ class AppStateViewModel(application: Application) : AndroidViewModel(application
                     null
                 }
             }
+            // The plan is picked on the phone and sent to the server "best effort", so the server can miss
+            // it (backend not running at that moment). Send it again on every start, or the Google checks
+            // fail with "Choose a plan to start scanning".
+            val token = sharedPrefs.getString("prism_token", null)
+            val plan = subscriptionPlan
+            if (token != null && plan != null) {
+                viewModelScope.launch {
+                    runCatching { withContext(Dispatchers.IO) { ApiClient.setPlan(token, plan.name) } }
+                }
+            }
         }
     }
 
@@ -313,36 +324,46 @@ class AppStateViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun autoScanClipboard(url: String) {
+    // Last copied text that was checked, so the same clipboard is not scanned again (survives rotation)
+    private var lastClipboardScan: String? = null
+
+    /**
+     * Auto-Protection: checks a link the user copied (MainActivity reads the clipboard while the app is
+     * open). Same pipeline as Manual Scan (blacklist -> whitelist -> cache -> rules + ML) plus Google
+     * Web Risk. Only links are checked; other copied text is ignored. The result is saved to History,
+     * and a popup opens only when the link is suspicious or dangerous.
+     */
+    fun autoScanClipboard(copied: String) {
+        val text = copied.trim()
+        if (!clipboardMonitoring || !isLoggedIn || text.isEmpty() || text == lastClipboardScan) return
+        val url = if (ManualScanAnalyzer.detectKind(text) == ScanType.URL) text
+            else ManualScanAnalyzer.extractUrls(text).firstOrNull() ?: return
+        lastClipboardScan = text
+        val token = sharedPrefs.getString("prism_token", null)
+        val advanced = subscriptionPlan == SubscriptionPlan.PLUS
+
         viewModelScope.launch {
-            delay(1000.milliseconds)
-
-            val isDangerous = Math.random() > 0.6
-            val threat = if (isDangerous) ThreatLevel.DANGER else ThreatLevel.SAFE
-            val details = if (isDangerous) {
-                "THREAT DETECTED: This link has been reported as malicious. Do not click or share."
-            } else {
-                "Link appears safe based on our database."
+            val repo = repoDeferred.await().second
+            val res = withContext(Dispatchers.IO) {
+                val blocked = repo.blacklistValues()
+                repo.scan(url, cacheable = GoogleCheck::canCache) {
+                    GoogleCheck.addTo(ManualScanAnalyzer.analyze(it, urlModel, advanced, blocked), it, token, "clipboard")
+                }
             }
+            val outcome = res.outcome
+            if (outcome.threat == ThreatLevel.SAFE) return@launch    // safe links are only saved to History
 
-            val newResult = ScanResult(
+            threatAlertSource = res.source
+            threatAlertData = ScanResult(
                 id = System.currentTimeMillis().toString(),
-                type = ScanType.URL,
+                type = outcome.kind,
                 content = url,
-                threat = threat,
+                threat = outcome.threat,
                 timestamp = System.currentTimeMillis(),
-                details = details
+                details = outcome.reasons.take(2).joinToString("; ") { it.detail },
+                reasons = outcome.reasons,
+                infoLines = outcome.infoLines + "Found in your clipboard (Auto-Protection)"
             )
-
-            // Update stats live during clipboard automated execution
-            scansToday++
-            if (threat == ThreatLevel.DANGER) {
-                threatsBlocked++
-            }
-
-            scanHistory.add(0, newResult)
-            threatAlertSource = ScanSource.FRESH
-            threatAlertData = newResult
             showThreatAlert = true
         }
     }

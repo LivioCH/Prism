@@ -9,6 +9,7 @@ import com.example.prism.data.RepoScanResult
 import com.example.prism.data.ScanRepository
 import com.example.prism.data.ScanSource
 import com.example.prism.data.UrlKeys
+import com.example.prism.scan.GoogleCheck
 import com.example.prism.scan.ManualScanAnalyzer
 import com.example.prism.scan.PhoneNumbers
 import com.example.prism.scan.UrlMlModel
@@ -21,7 +22,7 @@ import kotlinx.coroutines.withContext
  * Bridge between the accessibility service and the app's existing detection stack.
  *
  * Screen URLs go through exactly the same pipeline as Manual Scan:
- * `blacklist -> whitelist -> cache -> heuristics + ML -> save to Room`.
+ * `blacklist -> whitelist -> cache -> heuristics + ML -> Google Web Risk -> save to Room`.
  * That means a link caught on screen appears in History, updates the dashboard counters, and
  * shares the same trust/block lists as the manual scanner.
  *
@@ -45,15 +46,16 @@ class ScreenScanCoordinator(private val context: Context) {
         ensureReady()
         val repo = repository ?: return fallback(rawUrl)
 
-        val advanced = context
-            .getSharedPreferences("prism_prefs", Context.MODE_PRIVATE)
-            .getString("prism_plan", null) == "PLUS"
+        val prefs = context.getSharedPreferences("prism_prefs", Context.MODE_PRIVATE)
+        val advanced = prefs.getString("prism_plan", null) == "PLUS"
+        val token = prefs.getString("prism_token", null)   // for the Google Web Risk check through prism-backend
 
         val result = runCatching {
             withContext(Dispatchers.IO) {
                 val blocked = repo.blacklistValues()
-                repo.scan(rawUrl) { text ->
-                    val outcome = ManualScanAnalyzer.analyze(text, model, advanced, blocked)
+                repo.scan(rawUrl, cacheable = GoogleCheck::canCache) { text ->
+                    // On-device rules + ML first, then Google Web Risk (which can only make the verdict worse)
+                    val outcome = GoogleCheck.addTo(ManualScanAnalyzer.analyze(text, model, advanced, blocked), text, token, "screen")
                     outcome.copy(
                         reasons = outcome.reasons + ScanReason(
                             rule = "screen_scan",

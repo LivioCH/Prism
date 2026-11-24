@@ -199,190 +199,199 @@ fun LoginScreen(
         }
 
         // --- Subscription Popup Modal Overlay ---
-        if (viewModel.showSubscriptionModal) {
-            AlertDialog(
-                onDismissRequest = { viewModel.showSubscriptionModal = false },
-                confirmButton = {
-                    Button(
-                        onClick = { viewModel.showSubscriptionModal = false },
-                        enabled = viewModel.subscriptionPlan != null
-                    ) {
-                        Text("Continue")
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { viewModel.showSubscriptionModal = false }) {
-                        Text("Cancel")
-                    }
-                },
-                title = {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(text = "🛡️", fontSize = 40.sp)
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(text = "Welcome to Prism!", fontSize = 22.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
-                    }
-                },
-                text = {
-                    Column(
+        SubscriptionPlanDialog(viewModel, onPlanMessage)
+    }
+}
+
+/**
+ * Plan picker (Free / Plus). Shown after sign-up and whenever no plan is saved: from the login screen
+ * and from the dashboard, because after sign-up the app goes straight to the dashboard.
+ */
+@Composable
+fun SubscriptionPlanDialog(viewModel: AppStateViewModel, onPlanMessage: (String, String) -> Unit) {
+    if (viewModel.showSubscriptionModal) {
+        AlertDialog(
+            onDismissRequest = { viewModel.showSubscriptionModal = false },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.showSubscriptionModal = false },
+                    enabled = viewModel.subscriptionPlan != null
+                ) {
+                    Text("Continue")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.showSubscriptionModal = false }) {
+                    Text("Cancel")
+                }
+            },
+            title = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(text = "🛡️", fontSize = 40.sp)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(text = "Welcome to Prism!", fontSize = 22.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "Choose your protection plan to get started.",
+                        fontSize = 14.sp,
+                        textAlign = TextAlign.Center,
+                        color = Color(0xFF4B5563),
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)
+                    )
+
+                    // Free Plan Card
+                    val isFreeSelected = viewModel.subscriptionPlan == SubscriptionPlan.FREE
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                            .background(
+                                color = if (isFreeSelected) Color(0xFFEFF6FF) else Color.White,
+                                shape = RoundedCornerShape(16.dp)
+                            )
+                            .border(
+                                width = 2.dp,
+                                color = if (isFreeSelected) Color(0xFF2563EB) else Color(0xFFD1D5DB),
+                                shape = RoundedCornerShape(16.dp)
+                            )
+                            .clickable {
+                                viewModel.handlePlanSelection(SubscriptionPlan.FREE) { title, desc ->
+                                    onPlanMessage(title, desc)
+                                }
+                            }
+                            .padding(16.dp)
                     ) {
-                        Text(
-                            text = "Choose your protection plan to get started.",
-                            fontSize = 14.sp,
-                            textAlign = TextAlign.Center,
-                            color = Color(0xFF4B5563),
-                            modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)
-                        )
-
-                        // Free Plan Card
-                        val isFreeSelected = viewModel.subscriptionPlan == SubscriptionPlan.FREE
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(
-                                    color = if (isFreeSelected) Color(0xFFEFF6FF) else Color.White,
-                                    shape = RoundedCornerShape(16.dp)
-                                )
-                                .border(
-                                    width = 2.dp,
-                                    color = if (isFreeSelected) Color(0xFF2563EB) else Color(0xFFD1D5DB),
-                                    shape = RoundedCornerShape(16.dp)
-                                )
-                                .clickable {
-                                    viewModel.handlePlanSelection(SubscriptionPlan.FREE) { title, desc ->
-                                        onPlanMessage(title, desc)
+                        Column {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.Top
+                            ) {
+                                Column {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(text = "🛡️", fontSize = 18.sp)
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(text = "Prism", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1F2937))
                                     }
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(text = "Free", fontSize = 22.sp, fontWeight = FontWeight.Black, color = Color(0xFF2563EB))
                                 }
-                                .padding(16.dp)
-                        ) {
-                            Column {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.Top
+                                Box(
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .border(width = 2.dp, color = if (isFreeSelected) Color(0xFF2563EB) else Color(0xFFD1D5DB), shape = CircleShape),
+                                    contentAlignment = Alignment.Center
                                 ) {
-                                    Column {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(text = "🛡️", fontSize = 18.sp)
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Text(text = "Prism", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1F2937))
-                                        }
-                                        Spacer(modifier = Modifier.height(2.dp))
-                                        Text(text = "Free", fontSize = 22.sp, fontWeight = FontWeight.Black, color = Color(0xFF2563EB))
-                                    }
-                                    Box(
-                                        modifier = Modifier
-                                            .size(24.dp)
-                                            .border(width = 2.dp, color = if (isFreeSelected) Color(0xFF2563EB) else Color(0xFFD1D5DB), shape = CircleShape),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        if (isFreeSelected) {
-                                            Box(modifier = Modifier.size(12.dp).background(Color(0xFF2563EB), CircleShape))
-                                        }
+                                    if (isFreeSelected) {
+                                        Box(modifier = Modifier.size(12.dp).background(Color(0xFF2563EB), CircleShape))
                                     }
                                 }
-                                Spacer(modifier = Modifier.height(12.dp))
-                                Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(bottom = 12.dp)) {
-                                    FeatureRow(text = "Basic URL & phone scanning", iconColor = Color(0xFF16A34A))
-                                    FeatureRow(text = "10 scans per day", iconColor = Color(0xFF16A34A))
-                                    FeatureRow(text = "Scan history (last 24 hours)", iconColor = Color(0xFF16A34A))
-                                    FeatureRow(text = "Basic protection tips", iconColor = Color(0xFF16A34A))
-                                }
-                                Text(text = "Perfect for everyday protection", fontSize = 12.sp, color = Color(0xFF6B7280))
                             }
-                        }
-
-                        // Premium Plan Card
-                        val isPlusSelected = viewModel.subscriptionPlan == SubscriptionPlan.PLUS
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(
-                                    brush = Brush.linearGradient(
-                                        colors = if (isPlusSelected) {
-                                            listOf(Color(0xFFF3E8FF), Color(0xFFEFF6FF))
-                                        } else {
-                                            listOf(Color.White, Color.White)
-                                        }
-                                    ),
-                                    shape = RoundedCornerShape(16.dp)
-                                )
-                                .border(
-                                    width = 2.dp,
-                                    color = if (isPlusSelected) Color(0xFF9333EA) else Color(0xFFD1D5DB),
-                                    shape = RoundedCornerShape(16.dp)
-                                )
-                                .clickable {
-                                    viewModel.handlePlanSelection(SubscriptionPlan.PLUS) { title, desc ->
-                                        onPlanMessage(title, desc)
-                                    }
-                                }
-                                .padding(16.dp)
-                        ) {
-                            Column {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.Top
-                                ) {
-                                    Column {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(text = "👑", fontSize = 18.sp)
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Text(text = "Prism", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1F2937))
-                                        }
-                                        Spacer(modifier = Modifier.height(2.dp))
-                                        Row(verticalAlignment = Alignment.Bottom) {
-                                            Text(text = "$4.99", fontSize = 22.sp, fontWeight = FontWeight.Black, color = Color(0xFF9333EA))
-                                            Text(text = "/month", fontSize = 12.sp, color = Color(0xFF4B5563), modifier = Modifier.padding(bottom = 3.dp, start = 2.dp))
-                                        }
-                                    }
-                                    Box(
-                                        modifier = Modifier
-                                            .size(24.dp)
-                                            .border(width = 2.dp, color = if (isPlusSelected) Color(0xFF9333EA) else Color(0xFFD1D5DB), shape = CircleShape),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        if (isPlusSelected) {
-                                            Box(modifier = Modifier.size(12.dp).background(Color(0xFF9333EA), CircleShape))
-                                        }
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.height(12.dp))
-
-                                Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(bottom = 12.dp)) {
-                                    FeatureRow(text = "Everything in Free, plus:", iconColor = Color(0xFF9333EA), isBold = true)
-                                    FeatureRow(text = "Unlimited scans", iconColor = Color(0xFF9333EA))
-                                    FeatureRow(text = "Advanced AI threat detection", iconColor = Color(0xFF9333EA))
-                                    FeatureRow(text = "Real-time clipboard monitoring", iconColor = Color(0xFF9333EA))
-                                    FeatureRow(text = "Complete scan history", iconColor = Color(0xFF9333EA))
-                                    FeatureRow(text = "Priority support", iconColor = Color(0xFF9333EA))
-                                }
-
-                                Text(text = "Maximum protection for you and your family", fontSize = 12.sp, color = Color(0xFF7E22CE), fontWeight = FontWeight.Medium)
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(bottom = 12.dp)) {
+                                FeatureRow(text = "Basic URL & phone scanning", iconColor = Color(0xFF16A34A))
+                                FeatureRow(text = "10 scans per day", iconColor = Color(0xFF16A34A))
+                                FeatureRow(text = "Scan history (last 24 hours)", iconColor = Color(0xFF16A34A))
+                                FeatureRow(text = "Basic protection tips", iconColor = Color(0xFF16A34A))
                             }
+                            Text(text = "Perfect for everyday protection", fontSize = 12.sp, color = Color(0xFF6B7280))
                         }
-
-                        Text(
-                            text = "You can change your plan anytime in Settings",
-                            fontSize = 11.sp,
-                            color = Color(0xFF6B7280),
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
-                        )
                     }
-                },
-                shape = RoundedCornerShape(24.dp),
-                containerColor = Color.White
-            )
-        }
+
+                    // Premium Plan Card
+                    val isPlusSelected = viewModel.subscriptionPlan == SubscriptionPlan.PLUS
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                brush = Brush.linearGradient(
+                                    colors = if (isPlusSelected) {
+                                        listOf(Color(0xFFF3E8FF), Color(0xFFEFF6FF))
+                                    } else {
+                                        listOf(Color.White, Color.White)
+                                    }
+                                ),
+                                shape = RoundedCornerShape(16.dp)
+                            )
+                            .border(
+                                width = 2.dp,
+                                color = if (isPlusSelected) Color(0xFF9333EA) else Color(0xFFD1D5DB),
+                                shape = RoundedCornerShape(16.dp)
+                            )
+                            .clickable {
+                                viewModel.handlePlanSelection(SubscriptionPlan.PLUS) { title, desc ->
+                                    onPlanMessage(title, desc)
+                                }
+                            }
+                            .padding(16.dp)
+                    ) {
+                        Column {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.Top
+                            ) {
+                                Column {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(text = "👑", fontSize = 18.sp)
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(text = "Prism", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1F2937))
+                                    }
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Row(verticalAlignment = Alignment.Bottom) {
+                                        Text(text = "$4.99", fontSize = 22.sp, fontWeight = FontWeight.Black, color = Color(0xFF9333EA))
+                                        Text(text = "/month", fontSize = 12.sp, color = Color(0xFF4B5563), modifier = Modifier.padding(bottom = 3.dp, start = 2.dp))
+                                    }
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .border(width = 2.dp, color = if (isPlusSelected) Color(0xFF9333EA) else Color(0xFFD1D5DB), shape = CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (isPlusSelected) {
+                                        Box(modifier = Modifier.size(12.dp).background(Color(0xFF9333EA), CircleShape))
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(bottom = 12.dp)) {
+                                FeatureRow(text = "Everything in Free, plus:", iconColor = Color(0xFF9333EA), isBold = true)
+                                FeatureRow(text = "Unlimited scans", iconColor = Color(0xFF9333EA))
+                                FeatureRow(text = "Advanced AI threat detection", iconColor = Color(0xFF9333EA))
+                                FeatureRow(text = "Real-time clipboard monitoring", iconColor = Color(0xFF9333EA))
+                                FeatureRow(text = "Complete scan history", iconColor = Color(0xFF9333EA))
+                                FeatureRow(text = "Priority support", iconColor = Color(0xFF9333EA))
+                            }
+
+                            Text(text = "Maximum protection for you and your family", fontSize = 12.sp, color = Color(0xFF7E22CE), fontWeight = FontWeight.Medium)
+                        }
+                    }
+
+                    Text(
+                        text = "You can change your plan anytime in Settings",
+                        fontSize = 11.sp,
+                        color = Color(0xFF6B7280),
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                    )
+                }
+            },
+            shape = RoundedCornerShape(24.dp),
+            containerColor = Color.White
+        )
     }
 }
 
