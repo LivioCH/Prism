@@ -11,7 +11,7 @@ import { meRoutes } from './routes/me.js';
 import { scanRoutes } from './routes/scans.js';
 import { createGoogleLink } from './googleLink.js';
 
-export function createApp(db, { linkChecker, makeDetector } = {}) {
+export function createApp(db, { linkChecker, makeDetector, envFile } = {}) {
   const app = express();
   app.disable('x-powered-by');
   app.use(helmet());
@@ -19,7 +19,7 @@ export function createApp(db, { linkChecker, makeDetector } = {}) {
   app.use(express.json({ limit: '32kb' }));
 
   // The Google key can be changed from the admin screen while the server runs, so ask for it per request.
-  const google = createGoogleLink(db, { linkChecker, ...(makeDetector ? { makeDetector } : {}) });
+  const google = createGoogleLink(db, { linkChecker, envFile, ...(makeDetector ? { makeDetector } : {}) });
 
   app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
