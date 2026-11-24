@@ -75,6 +75,12 @@ class ScanRepository(
     companion object {
         /** A cached verdict older than this is analysed again (blocklists and rules change). */
         const val CACHE_TTL_MS = 7L * 24 * 60 * 60 * 1000
+        /**
+         * Part of every cache key. Bump it whenever the scan rules or the ML model change: verdicts saved under an
+         * older version are then never found, so those links are analysed again with the new rules.
+         * v2 = host-only ML model (ml/train_url_model.js), Google decides.
+         */
+        const val CACHE_VERSION = "v2|"
         const val BLOCKED_REASON = "You blocked this site"
         const val TRUSTED_REASON = "You trust this site"
         const val CACHE_REASON = "Result from cache"
@@ -109,7 +115,7 @@ class ScanRepository(
                 )
                 source = ScanSource.WHITELIST
             } else {
-                val hit = cache.get(key)?.takeIf { now() - it.cachedAt < CACHE_TTL_MS }   // 4. cache
+                val hit = cache.get(CACHE_VERSION + key)?.takeIf { now() - it.cachedAt < CACHE_TTL_MS }   // 4. cache
                 if (hit != null) {
                     val ml = hit.mlScore
                     outcome = ManualScanOutcome(
@@ -129,7 +135,7 @@ class ScanRepository(
         if (source == ScanSource.FRESH && kind == ScanType.URL && result.cacheable) {
             cache.put(
                 UrlCacheEntity(
-                    key = UrlKeys.cacheKey(text),
+                    key = CACHE_VERSION + UrlKeys.cacheKey(text),
                     verdict = DbMap.verdict(result.threat),
                     mlScore = mlScoreOf(result),
                     reasons = ReasonsJson.encode(result.reasons),

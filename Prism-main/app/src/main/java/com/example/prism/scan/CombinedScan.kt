@@ -1,6 +1,7 @@
 package com.example.prism.scan
 
 import com.example.prism.ScanReason
+import com.example.prism.ScanType
 import com.example.prism.ThreatLevel
 import com.example.prism.net.ApiException
 import com.example.prism.net.GoogleQuota
@@ -35,8 +36,9 @@ sealed interface GoogleCheck {
  *   Normal scan (on the phone, always runs)  +  Premium check (Google Web Risk, online, for the links found)
  *
  * Rules:
- *  - The final verdict is the worse of the two. Google can only RAISE a verdict: "not listed" means
- *    Google has not reported the site, it never proves the site is safe.
+ *  - Google decides when it answers; the ML model is the second layer for sites Google does not know yet
+ *    (see [merge]). "Not listed" never proves a site is safe, so the ML warning still shows, but the ML
+ *    alone cannot declare DANGER against Google. The result shows Google's and ML's conclusions separately.
  *  - Google being unavailable or the Free limit being reached never fails the scan. The on-device
  *    result is shown with a note, and it is not cached so the link gets its Premium check next time.
  *  - Only the links are sent to the backend, never the text of a message.
@@ -79,27 +81,75 @@ object CombinedScan {
         return merge(manual, google)
     }
 
-    fun merge(manual: ManualScanOutcome, google: GoogleCheck): ManualScanOutcome = when (google) {
+    /** The ML model's own conclusion for the links, before anything is capped: "ML conclusion: 98% phishing probability, rated Dangerous". */
+    internal fun mlConclusion(manual: ManualScanOutcome): String? {
+        val scored = manual.urlResults.filter { it.mlProbability != null }
+        if (scored.isEmpty()) return null
+        val worst = scored.maxBy { it.mlProbability!! }
+        val p = worst.mlProbability!!
+        val level = when (ManualScanAnalyzer.mlThreat(p)) { ThreatLevel.DANGER -> "Dangerous"; ThreatLevel.WARNING -> "Suspicious"; ThreatLevel.SAFE -> "Safe" }
+        return "ML conclusion: ${ManualScanAnalyzer.percent(p)}% phishing probability, rated $level" +
+            if (worst.mlIgnored) " (not used: official site)" else ""
+    }
+
+    private fun googleConclusion(google: GoogleCheck): String = when (google) {
+        is GoogleCheck.Done ->
+            if (google.result.isDangerous) "Google conclusion: DANGEROUS, Google lists it as a threat"
+            else "Google conclusion: not on Google's list of dangerous sites"
+        is GoogleCheck.LimitReached -> "Google conclusion: not checked (daily limit reached)"
+        is GoogleCheck.Unavailable -> "Google conclusion: not checked (Google not available)"
+    }
+
+    /**
+     * Google decides. The ML model is the second layer for what Google does not know (new phishing
+     * pages that are not on its list yet).
+     *  - Google says dangerous  -> DANGER, final.
+     *  - Google lists nothing   -> the Normal scan result stays, but a verdict that ONLY the ML model pushed to
+     *                              DANGER is lowered to WARNING: Google, the priority, did not flag it. Rules that
+     *                              do not need ML (raw IP, "@" trick, blacklist...) keep their verdict.
+     *  - Google not available   -> the Normal scan (ML + rules) decides, as before.
+     */
+    fun merge(manual: ManualScanOutcome, google: GoogleCheck): ManualScanOutcome {
+        val conclusions = listOfNotNull(googleConclusion(google), mlConclusion(manual))
+        // One link: the "ML conclusion" line says it all, so drop the plain "ML: x%" line to avoid showing it twice.
+        // (A message with several links keeps its per-link "ML: x% (host)" lines.)
+        val manual = if (manual.kind == ScanType.URL && mlConclusion(manual) != null)
+            manual.copy(infoLines = manual.infoLines.filterNot { it.startsWith("ML: ") }) else manual
+        return when (google) {
         is GoogleCheck.Done -> {
             val r = google.result
             val listed = r.reasons.filter { it.second }.map { ScanReason("web_risk", it.first, 100, "high") }
                 .ifEmpty { if (r.isDangerous) listOf(ScanReason("web_risk", r.details, 100, "high")) else emptyList() }
-            val notes: List<String> =
-                if (r.isDangerous) listOf(CHECKED_NOTE) else listOf(CHECKED_NOTE, NOT_PROOF_NOTE)
+            val base = manual.withoutMl
+            val mlOnlyDanger = !r.isDangerous && base != null && manual.threat == ThreatLevel.DANGER && base.threat != ThreatLevel.DANGER
+            val threat = when {
+                r.isDangerous -> ThreatLevel.DANGER
+                mlOnlyDanger -> if (base!!.threat == ThreatLevel.SAFE) ThreatLevel.WARNING else base.threat
+                else -> manual.threat
+            }
+            val notes: List<String> = when {
+                r.isDangerous -> listOf(CHECKED_NOTE, "Verdict decided by: Google")
+                mlOnlyDanger -> listOf(CHECKED_NOTE, NOT_PROOF_NOTE, "Verdict decided by: Google found nothing, the ML second layer raised a warning")
+                else -> listOf(CHECKED_NOTE, NOT_PROOF_NOTE, "Verdict decided by: Google found nothing, the Normal scan (ML + rules) agrees")
+            }
+            var reasons = if (listed.isEmpty()) manual.reasons
+                          else listed + manual.reasons.filter { it.rule != "no_issues" }   // Google's findings first
+            if (mlOnlyDanger) {
+                // What the rules alone found, plus the ML finding as a warning (not "very dangerous")
+                reasons = base!!.reasons.filter { it.rule != "no_issues" } +
+                    manual.reasons.filter { it.rule == "ml_model" }.map { it.copy(severity = "medium") }
+            }
             manual.copy(
-                // Google can only raise the verdict
-                threat = if (r.isDangerous) ThreatLevel.DANGER else manual.threat,
-                // Google's findings first; "nothing found" would contradict them
-                reasons = if (listed.isEmpty()) manual.reasons
-                          else listed + manual.reasons.filter { it.rule != "no_issues" },
-                infoLines = manual.infoLines + notes,
+                threat = threat,
+                reasons = reasons,
+                infoLines = manual.infoLines + conclusions + notes,
                 cacheable = true,
                 googleStatus = GoogleStatus.CHECKED,
                 googleQuota = r.quota
             )
         }
         is GoogleCheck.LimitReached -> manual.copy(
-            infoLines = manual.infoLines + LIMIT_NOTE,
+            infoLines = manual.infoLines + conclusions + "Verdict decided by: the Normal scan (ML + rules)" + LIMIT_NOTE,
             cacheable = false,
             googleStatus = GoogleStatus.LIMIT_REACHED,
             // used up: 0 left now, whatever the server's limit is (unknown limit shows as 0)
@@ -108,9 +158,13 @@ object CombinedScan {
         is GoogleCheck.Unavailable -> manual.copy(
             // Silent fallback: the user still gets the Normal scan result, without a technical
             // message ("not set up", "cannot reach the server"). Signed out is the exception: they can fix it.
-            infoLines = if (google.tellUser) manual.infoLines + "$UNAVAILABLE_NOTE (${google.why}): switched to Normal scan" else manual.infoLines,
+            // Silent about Google (offline, server or key problems are not the user's business): only the ML side shows
+            infoLines = manual.infoLines + (if (google.tellUser) conclusions else listOfNotNull(mlConclusion(manual))) +
+                "Verdict decided by: the Normal scan (ML + rules)" +
+                (if (google.tellUser) listOf("$UNAVAILABLE_NOTE (${google.why}): switched to Normal scan") else emptyList()),
             cacheable = false,
             googleStatus = GoogleStatus.UNAVAILABLE
         )
+        }
     }
 }

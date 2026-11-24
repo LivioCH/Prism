@@ -18,7 +18,10 @@ data class ManualScanOutcome(
     val cacheable: Boolean = true,
     // What the Premium check (Google) did for this scan, and how many are left afterwards (null = unknown)
     val googleStatus: GoogleStatus = GoogleStatus.NOT_APPLICABLE,
-    val googleQuota: GoogleQuota? = null
+    val googleQuota: GoogleQuota? = null,
+    // The same scan with the ML model switched off (rules and wording only). null = no ML ran.
+    // CombinedScan uses it to tell what ONLY the ML flagged.
+    val withoutMl: ManualScanOutcome? = null
 )
 
 data class UrlResult(
@@ -93,7 +96,14 @@ object ManualScanAnalyzer {
         return ScanType.MESSAGE
     }
 
-    fun analyze(input: String, model: UrlMlModel?, advanced: Boolean = false, blocklist: Set<String> = emptySet()): ManualScanOutcome =
+    fun analyze(input: String, model: UrlMlModel?, advanced: Boolean = false, blocklist: Set<String> = emptySet()): ManualScanOutcome {
+        val out = analyzeCore(input, model, advanced, blocklist)
+        if (model == null || out.kind == ScanType.PHONE) return out
+        // The same scan without the ML model: CombinedScan needs it to tell what only the ML flagged
+        return out.copy(withoutMl = analyzeCore(input, null, advanced, blocklist))
+    }
+
+    private fun analyzeCore(input: String, model: UrlMlModel?, advanced: Boolean, blocklist: Set<String>): ManualScanOutcome =
         when (detectKind(input)) {
             ScanType.PHONE -> PhoneAnalyzer.analyze(input.trim())
             ScanType.URL -> analyzeSingleUrl(input.trim(), model, advanced, blocklist)
@@ -107,7 +117,7 @@ object ManualScanAnalyzer {
     private fun sevRank(s: String) = when (s) { "high" -> 3; "medium" -> 2; else -> 1 }
     private fun sorted(r: List<ScanReason>) = r.sortedWith(compareByDescending<ScanReason> { sevRank(it.severity) }.thenByDescending { it.points })
 
-    private fun mlThreat(p: Double) = when {
+    internal fun mlThreat(p: Double) = when {
         p >= UrlMlModel.DANGEROUS_AT -> ThreatLevel.DANGER
         p >= UrlMlModel.SUSPICIOUS_AT -> ThreatLevel.WARNING
         else -> ThreatLevel.SAFE

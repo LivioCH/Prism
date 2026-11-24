@@ -51,6 +51,60 @@ class CombinedScanTest {
         }
     }
 
+    // ---- Google decides, ML is the second layer
+
+    private val mlReason = ScanReason("ml_model", "The machine-learning model rates this address 98% likely to be phishing", 98, "high")
+
+    /** A scan where ONLY the ML model reached DANGER: the rules alone found nothing. */
+    private fun mlOnlyDanger(u: String = "https://school.example.edu/login") = ManualScanOutcome(
+        ScanType.URL, ThreatLevel.DANGER, listOf(mlReason), listOf("ML: 98% phishing probability"),
+        listOf(UrlResult(u, 0.98, ThreatLevel.DANGER, listOf(mlReason))),
+        withoutMl = ManualScanOutcome(ScanType.URL, ThreatLevel.SAFE, listOf(ScanReason("no_issues", "No issues", 0, "low")), emptyList())
+    )
+
+    @Test fun googleNotListingItStopsTheMlAloneFromSayingDanger() {
+        val r = run(mlOnlyDanger()) { googleSafe("https://school.example.edu/login") }
+        assertEquals(ThreatLevel.WARNING, r.threat)
+        assertTrue("the ML finding is still shown, as a warning", r.reasons.any { it.rule == "ml_model" && it.severity == "medium" })
+    }
+
+    @Test fun googleListingItIsDangerWhateverTheMlSays() {
+        val low = ManualScanOutcome(ScanType.URL, ThreatLevel.SAFE, listOf(ScanReason("no_issues", "No issues", 0, "low")), emptyList(),
+            listOf(UrlResult("http://evil-login.xyz", 0.05, ThreatLevel.SAFE, emptyList())), withoutMl = null)
+        assertEquals(ThreatLevel.DANGER, run(low) { googleDanger() }.threat)
+    }
+
+    @Test fun rulesThatNeedNoMlKeepDangerEvenWhenGoogleListsNothing() {
+        val ipReason = ScanReason("ip_host", "Address is a raw IP", 40, "high")
+        val m = ManualScanOutcome(ScanType.URL, ThreatLevel.DANGER, listOf(ipReason, mlReason), emptyList(),
+            listOf(UrlResult("http://1.2.3.4/login", 0.99, ThreatLevel.DANGER, listOf(ipReason, mlReason))),
+            withoutMl = ManualScanOutcome(ScanType.URL, ThreatLevel.DANGER, listOf(ipReason), emptyList()))
+        assertEquals(ThreatLevel.DANGER, run(m) { googleSafe("http://1.2.3.4/login") }.threat)
+    }
+
+    @Test fun resultShowsGoogleAndMlConclusionsSeparately() {
+        val r = run(mlOnlyDanger()) { googleSafe("https://school.example.edu/login") }
+        assertTrue(r.infoLines.any { it.startsWith("Google conclusion: not on Google's list") })
+        assertTrue(r.infoLines.any { it.startsWith("ML conclusion: 98% phishing probability, rated Dangerous") })
+        assertTrue(r.infoLines.any { it.startsWith("Verdict decided by: Google found nothing") })
+        val d = run(manual(ThreatLevel.SAFE, listOf("http://evil-login.xyz"))) { googleDanger() }
+        assertTrue(d.infoLines.any { it.startsWith("Google conclusion: DANGEROUS") })
+        assertTrue("Verdict decided by: Google" in d.infoLines)
+    }
+
+    @Test fun theMlPercentageIsShownOnlyOnceForASingleLink() {
+        val r = run(mlOnlyDanger()) { googleSafe("https://school.example.edu/login") }
+        assertTrue("no plain ML line next to the conclusion", r.infoLines.none { it.startsWith("ML: ") })
+        assertEquals(1, r.infoLines.count { it.contains("98%") })
+    }
+
+    @Test fun withoutGoogleTheMlAndRulesDecideAndSayso() {
+        val r = run(mlOnlyDanger()) { throw ApiException("daily_limit", "used up") }
+        assertEquals("ML leads when Google cannot answer", ThreatLevel.DANGER, r.threat)
+        assertTrue(r.infoLines.any { it.startsWith("Google conclusion: not checked") })
+        assertTrue("Verdict decided by: the Normal scan (ML + rules)" in r.infoLines)
+    }
+
     @Test fun notListedKeepsTheCaveat() {
         val r = run(manual(ThreatLevel.SAFE)) { googleSafe() }
         assertTrue(CombinedScan.NOT_PROOF_NOTE in r.infoLines)
