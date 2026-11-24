@@ -8,3 +8,6 @@ local.properties
 .env
 *.iml
 .DS_Store
+
+# Training dataset (57 MB, download from UCI: PhiUSIIL Phishing URL Dataset)
+PhiUSIIL_Phishing_URL_Dataset.csv

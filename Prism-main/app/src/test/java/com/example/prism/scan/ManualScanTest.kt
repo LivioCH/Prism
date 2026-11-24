@@ -27,10 +27,57 @@ class ManualScanTest {
     @Test
     fun featuresMatchSpec() {
         val f = model.extract("http://185.220.101.45/login")
-        // len 27, host 14, dots 3, hyphens 0, digits 11, special 0, slashes 3, ip 1, at 0, subdomains 2, tld "45" no, keyword yes
-        assertEquals(27.0, f[0], 0.0); assertEquals(14.0, f[1], 0.0); assertEquals(3.0, f[2], 0.0)
-        assertEquals(11.0, f[4], 0.0); assertEquals(3.0, f[6], 0.0); assertEquals(1.0, f[7], 0.0)
-        assertEquals(2.0, f[9], 0.0); assertEquals(1.0, f[11], 0.0); assertEquals(0.4074, f[12], 0.0); assertEquals(0.0, f[13], 0.0)
+        // host "185.220.101.45": 14 chars, raw IP, 2 subdomains, ending "45" not suspicious, no hyphens, 11 digits,
+        // longest label 3, not a free host, no brand, longest digit run 3, second-level name "101" has 3 chars, 3 dots
+        assertEquals(14.0, f[0], 0.0); assertEquals(1.0, f[1], 0.0); assertEquals(2.0, f[2], 0.0); assertEquals(0.0, f[3], 0.0)
+        assertEquals(0.0, f[4], 0.0); assertEquals(11.0, f[5], 0.0); assertEquals(3.0, f[7], 0.0); assertEquals(0.0, f[8], 0.0)
+        assertEquals(0.0, f[9], 0.0); assertEquals(3.0, f[10], 0.0); assertEquals(3.0, f[11], 0.0); assertEquals(3.0, f[13], 0.0)
+    }
+
+    @Test
+    fun pathAndQueryNeverChangeTheScore() {
+        val base = model.predict("https://ilearning.cycu.edu.tw")
+        for (tail in listOf("/login/index.php", "/a/b/c/d/e/f?x=1&y=2", "/verify-account-password")) {
+            assertEquals(tail, base, model.predict("https://ilearning.cycu.edu.tw$tail"), 0.0)
+        }
+    }
+
+    @Test
+    fun matchesTheTrainingScriptExactly() {
+        // ml/parity_vectors.json is written by ml/train_url_model.js: its probability for each URL must be ours too
+        val text = File("../../ml/parity_vectors.json").readText()
+        val rows = Regex("\"url\"\\s*:\\s*\"(.*?)\",\\s*\"probability\"\\s*:\\s*([0-9.eE+-]+)").findAll(text).toList()
+        assertTrue("parity file is empty", rows.size >= 10)
+        for (r in rows) {
+            val url = r.groupValues[1]
+            assertEquals(url, r.groupValues[2].toDouble(), model.predict(url), 1e-9)
+        }
+    }
+
+    @Test
+    fun schoolPortalLoginPagesAreNotPhishing() {
+        // The old model gave 98% because of "login" in the path. The new one only reads the host name.
+        for (u in listOf(
+            "https://ilearning.cycu.edu.tw/login/index.php",
+            "https://moodle.ntu.edu.tw/login/index.php",
+            "https://portal.nthu.edu.tw/account/login"
+        )) {
+            assertTrue("$u scored ${model.predict(u)}", model.predict(u) < UrlMlModel.SUSPICIOUS_AT)
+            assertEquals(u, ThreatLevel.SAFE, ManualScanAnalyzer.analyze(u, model).threat)
+        }
+    }
+
+    @Test
+    fun badAddressesAreStillFlagged() {
+        for (u in listOf(
+            "http://185.220.101.45/login",
+            "http://secure-login.xyz/verify",
+            "https://yahoomaill.joxej972537483.workers.dev/",
+            "https://amazon-ploi.youdontcare.com/",
+            "https://sg-connect01.firebaseapp.com/"
+        )) {
+            assertTrue("$u scored ${model.predict(u)}", model.predict(u) >= UrlMlModel.DANGEROUS_AT)
+        }
     }
 
     @Test

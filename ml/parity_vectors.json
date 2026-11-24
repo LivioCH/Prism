@@ -1,0 +1,86 @@
+[
+ {
+  "url": "https://ilearning.cycu.edu.tw/login/index.php",
+  "probability": 0.06925001736502082
+ },
+ {
+  "url": "https://moodle.ntu.edu.tw/login/index.php",
+  "probability": 0.052563907460077865
+ },
+ {
+  "url": "https://www.google.com",
+  "probability": 0.30858203713232074
+ },
+ {
+  "url": "http://185.220.101.45/login",
+  "probability": 0.9998772265718404
+ },
+ {
+  "url": "http://secure-login.xyz/verify",
+  "probability": 0.9730135182438032
+ },
+ {
+  "url": "https://yahoomaill.joxej972537483.workers.dev/",
+  "probability": 0.9999999969986053
+ },
+ {
+  "url": "https://amazon-ploi.youdontcare.com/",
+  "probability": 0.9941482843507898
+ },
+ {
+  "url": "https://sg-connect01.firebaseapp.com/",
+  "probability": 0.9998958955157762
+ },
+ {
+  "url": "http://www.acount-manager.info",
+  "probability": 0.861414180778087
+ },
+ {
+  "url": "http://uk-ensono.com",
+  "probability": 0.47020060787209855
+ },
+ {
+  "url": "https://www.umc.org",
+  "probability": 0.09569361053156433
+ },
+ {
+  "url": "https://www.dekopay.com",
+  "probability": 0.2768035904941453
+ },
+ {
+  "url": "https://user@evil-paypal.co.uk:8080/a?b=1",
+  "probability": 0.8591434164665587
+ },
+ {
+  "url": "HTTP://WWW.Example.COM/X",
+  "probability": 0.2860019946833422
+ },
+ {
+  "url": "https://github.com/user/repo",
+  "probability": 0.2737328309408422
+ },
+ {
+  "url": "https://stackoverflow.com",
+  "probability": 0.26158417566580244
+ },
+ {
+  "url": "https://good-looking-site.com/news",
+  "probability": 0.6524901159518756
+ },
+ {
+  "url": "https://www.my-company-portal.com",
+  "probability": 0.657605540530687
+ },
+ {
+  "url": "https://www.coca-cola.com",
+  "probability": 0.5086569941648218
+ },
+ {
+  "url": "https://portal.nthu.edu.tw/account/login",
+  "probability": 0.06355710220335417
+ },
+ {
+  "url": "https://www.bbc.co.uk",
+  "probability": 0.1411063248770177
+ }
+]
