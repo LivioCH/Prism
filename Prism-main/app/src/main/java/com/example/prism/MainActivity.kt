@@ -3,6 +3,9 @@ package com.example.prism
 import com.example.prism.data.ScanSource
 import com.example.prism.scan.GoogleStatus
 import com.example.prism.scan.QuotaText
+import android.content.ClipDescription
+import android.content.ClipboardManager
+import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -16,6 +19,43 @@ import androidx.compose.ui.platform.LocalContext
 
 class MainActivity : ComponentActivity() {
     private val viewModel: AppStateViewModel by viewModels()
+
+    // Auto-Protection for copied links (Plus): Android only lets an app read the clipboard while it is
+    // open and focused, so it is checked when Prism comes to the front and when it changes while open.
+    private val clipboard by lazy { getSystemService(ClipboardManager::class.java) }
+    private val clipChanged = ClipboardManager.OnPrimaryClipChangedListener { checkClipboard() }
+    private var lastClipStamp = -1L
+
+    override fun onResume() {
+        super.onResume()
+        clipboard?.addPrimaryClipChangedListener(clipChanged)
+    }
+
+    override fun onPause() {
+        clipboard?.removePrimaryClipChangedListener(clipChanged)
+        super.onPause()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) checkClipboard()
+    }
+
+    private fun checkClipboard() {
+        // Only for Plus with Auto-Protection on (checked again in autoScanClipboard)
+        if (viewModel.subscriptionPlan != SubscriptionPlan.PLUS || !viewModel.clipboardMonitoring || !viewModel.isLoggedIn) return
+        val cm = clipboard ?: return
+        // The description can be read without Android's "Prism pasted from your clipboard" notice;
+        // the clip itself is only read when it is new text.
+        val desc = cm.primaryClipDescription ?: return
+        if (!desc.hasMimeType(ClipDescription.MIMETYPE_TEXT_PLAIN) && !desc.hasMimeType(ClipDescription.MIMETYPE_TEXT_HTML)) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            if (desc.timestamp == lastClipStamp) return
+            lastClipStamp = desc.timestamp
+        }
+        val text = runCatching { cm.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString() }.getOrNull() ?: return
+        viewModel.autoScanClipboard(text)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -111,6 +151,8 @@ fun AntiPhishingMainScreen(viewModel: AppStateViewModel) {
         googleActive = viewModel.googleActive,
         quotaUnreachable = viewModel.quotaUnreachable,
         premiumUnavailable = viewModel.premiumUnavailable,
+        freeScansLeft = viewModel.freeScansLeft,
+        freeScansResetAt = viewModel.freeScansResetAt,
         isAdmin = viewModel.isAdmin,
         googleApiContent = {
             GoogleApiTab(
@@ -177,6 +219,7 @@ fun AntiPhishingMainScreen(viewModel: AppStateViewModel) {
                 GoogleStatus.LIMIT_REACHED -> "limit"
                 GoogleStatus.UNAVAILABLE -> "unavailable"
                 GoogleStatus.NOT_APPLICABLE -> "no_links"
+                GoogleStatus.PLUS_ONLY -> "plus_only"
                 null -> ""
             }
         }

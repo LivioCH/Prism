@@ -81,9 +81,12 @@ export function scanRoutes(db, getWebRisk = () => null) {
       const { text } = webRiskSchema.parse(req.body);
       const user = req.user;
       if (!user.plan) throw new HttpError(402, 'plan_required', 'Choose a plan to start scanning');
+      const plan = PLANS[user.plan];
+      if (!plan.googleCheck) {
+        throw new HttpError(403, 'upgrade_required', 'The Google check is a Prism Plus feature', { feature: 'google_check' });
+      }
       const webRisk = getWebRisk();
       if (!webRisk) throw new HttpError(503, 'webrisk_unavailable', 'Google link check is not set up on the server (no API key yet)');
-      const plan = PLANS[user.plan];
 
       const links = extractLinks(text);
       if (!links.length) throw new HttpError(400, 'no_links', 'No links found. Google Web Risk only checks links');

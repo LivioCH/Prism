@@ -13,15 +13,15 @@ export const config = {
   webRiskApiKey: process.env.WEB_RISK_API_KEY || '',
 };
 
-// Daily scan limit of the Free plan. UNLIMITED by default (Free gets the Premium/Google check too).
-// To bring the old limit back, set FREE_DAILY_SCAN_LIMIT=10 in the environment: the limit code,
-// 429 daily_limit and GET /api/quota all still work.
+// Free plan: manual scans on the phone only, 10 per rolling 24h (the app counts them, since they never
+// reach the server; /api/scans enforces the same number). Set FREE_DAILY_SCAN_LIMIT to change it.
 const freeLimit = Number(process.env.FREE_DAILY_SCAN_LIMIT);
 
 // Mirrors the plan cards in the app (FREE vs PLUS $4.99/month).
 export const PLANS = {
   FREE: {
-    dailyScanLimit: Number.isFinite(freeLimit) && freeLimit > 0 ? freeLimit : Infinity,
+    dailyScanLimit: Number.isFinite(freeLimit) && freeLimit > 0 ? freeLimit : 10,
+    googleCheck: false,          // Google Web Risk (Premium check) and Auto-Protection are Plus only
     historyWindowMs: 24 * 3600_000, // "Scan history (last 24 hours)"
     clipboardScan: false,        // "Real-time clipboard monitoring" is Plus
     messageScan: false,          // Free = "Basic URL & phone scanning"
@@ -29,6 +29,7 @@ export const PLANS = {
   },
   PLUS: {
     dailyScanLimit: Infinity,    // "Unlimited scans"
+    googleCheck: true,
     historyWindowMs: Infinity,   // "Complete scan history"
     clipboardScan: true,
     messageScan: true,

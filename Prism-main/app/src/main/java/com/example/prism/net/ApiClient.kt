@@ -1,6 +1,8 @@
 package com.example.prism.net
 
 import org.json.JSONObject
+import java.io.IOException
+import java.net.ConnectException
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -48,11 +50,39 @@ object ApiClient {
     // Reaches the PC's backend through `adb reverse tcp:3000 tcp:3000` (development only).
     const val BASE_URL = "http://localhost:3000"
 
+    // 10.0.2.2 is the Android emulator's own address for the PC: it needs no `adb reverse`, which
+    // drops whenever Android Studio or the emulator restarts. A USB phone still uses localhost + adb reverse.
+    internal val BASE_URLS = listOf(BASE_URL, "http://10.0.2.2:3000")
+
+    // The address that answered last; tried first next time
+    @Volatile private var baseUrl = BASE_URL
+
     // A link check waits on Google for every link in the message, so it gets more than the normal 8 s
     private const val WEB_RISK_TIMEOUT_MS = 30_000
 
+    /**
+     * Sends to the last address that worked. If that one refuses the connection (nothing sent yet, so a
+     * retry is safe), the other address is tried and remembered when it answers.
+     */
     private fun call(method: String, path: String, body: JSONObject? = null, token: String? = null, timeoutMs: Int = 8000): JSONObject {
-        val conn = URL(BASE_URL + path).openConnection() as HttpURLConnection
+        val first = baseUrl
+        try {
+            return send(first, method, path, body, token, timeoutMs)
+        } catch (e: ConnectException) {
+            for (other in BASE_URLS) {
+                if (other == first) continue
+                try {
+                    return send(other, method, path, body, token, timeoutMs).also { baseUrl = other }
+                } catch (_: IOException) {
+                    // keep the first error: it names the address the app normally uses
+                }
+            }
+            throw e
+        }
+    }
+
+    private fun send(base: String, method: String, path: String, body: JSONObject?, token: String?, timeoutMs: Int): JSONObject {
+        val conn = URL(base + path).openConnection() as HttpURLConnection
         try {
             conn.requestMethod = method
             conn.connectTimeout = 8000

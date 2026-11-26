@@ -37,7 +37,7 @@ before(async () => {
   admin = (await signup('boss@example.com')).json.token;
   db.prepare('UPDATE users SET is_admin = 1 WHERE email = ?').run('boss@example.com');
   user = (await signup('plain@example.com')).json.token;
-  await call('PUT', '/api/subscription', { token: user, body: { plan: 'FREE' } });
+  await call('PUT', '/api/subscription', { token: user, body: { plan: 'PLUS' } });   // the Google check is Plus only
 });
 after(() => server.close());
 

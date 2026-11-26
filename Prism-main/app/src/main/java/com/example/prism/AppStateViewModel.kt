@@ -21,7 +21,9 @@ import com.example.prism.net.GoogleQuota
 import com.example.prism.scan.GoogleStatus
 import com.example.prism.scan.QuotaText
 import org.json.JSONObject
+import com.example.prism.scan.AutoProtectionPolicy
 import com.example.prism.scan.CombinedScan
+import com.example.prism.scan.FreeScanLimit
 import com.example.prism.scan.ManualScanAnalyzer
 import com.example.prism.scan.PhoneNumbers
 import com.example.prism.scan.UrlMlModel
@@ -86,6 +88,23 @@ class AppStateViewModel(application: Application) : AndroidViewModel(application
     // The last Premium check could not reach Google (backend down, key missing...): the indicator says so
     // instead of promising checks that would fail. Cleared by the next successful check.
     var premiumUnavailable by mutableStateOf(false)
+
+    // Free plan: times of the manual scans of the last 24h (FreeScanLimit), saved on the phone
+    private var freeScanTimes = FreeScanLimit.decode(sharedPrefs.getString("free_scan_times", null))
+    var freeScansLeft by mutableIntStateOf(FreeScanLimit.remaining(freeScanTimes, System.currentTimeMillis()))
+    var freeScansResetAt by mutableStateOf(FreeScanLimit.resetsAt(freeScanTimes, System.currentTimeMillis()))
+
+    private fun refreshFreeScans(now: Long = System.currentTimeMillis()) {
+        freeScanTimes = FreeScanLimit.recent(freeScanTimes, now)
+        freeScansLeft = FreeScanLimit.remaining(freeScanTimes, now)
+        freeScansResetAt = FreeScanLimit.resetsAt(freeScanTimes, now)
+    }
+
+    private fun recordFreeScan(now: Long = System.currentTimeMillis()) {
+        freeScanTimes = FreeScanLimit.recent(freeScanTimes + now, now)
+        sharedPrefs.edit().putString("free_scan_times", FreeScanLimit.encode(freeScanTimes)).apply()
+        refreshFreeScans(now)
+    }
 
     var loginEmail by mutableStateOf("")
     var loginPassword by mutableStateOf("")
@@ -544,36 +563,51 @@ class AppStateViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun autoScanClipboard(url: String) {
+    // Last copied text that was checked, so the same clipboard is not checked twice (survives rotation)
+    private var lastClipboardScan: String? = null
+
+    /**
+     * Auto-Protection for copied links (Plus). MainActivity reads the clipboard while Prism is open,
+     * because Android does not let apps read it in the background. Same pipeline as a Plus manual scan:
+     * blacklist -> whitelist -> cache -> rules + ML, then Google Web Risk. Only links are checked; other
+     * copied text is ignored. The result is saved to History; a popup opens only when it is not safe.
+     */
+    fun autoScanClipboard(copied: String) {
+        val text = copied.trim()
+        val token = sharedPrefs.getString("prism_token", null)
+        val plan = subscriptionPlan?.name
+        if (!AutoProtectionPolicy.armed(plan, clipboardMonitoring, token != null)) return
+        if (text.isEmpty() || text == lastClipboardScan) return
+        val url = if (ManualScanAnalyzer.detectKind(text) == ScanType.URL) text
+            else ManualScanAnalyzer.extractUrls(text).firstOrNull() ?: return
+        lastClipboardScan = text
+
         viewModelScope.launch {
-            delay(1000.milliseconds)
+            val repo = repoDeferred.await().second
+            val res = runCatching {
+                val blocked = repo.blacklistValues()
+                repo.scan(url) { link ->
+                    val manual = ManualScanAnalyzer.analyze(link, urlModel, true, blocked)
+                    CombinedScan.run(manual) { links ->
+                        withContext(Dispatchers.IO) { ApiClient.webRiskCheck(token!!, links, CLIPBOARD_GOOGLE_TIMEOUT_MS) }
+                    }
+                }
+            }.getOrNull() ?: return@launch
+            val outcome = res.outcome
+            if (outcome.threat == ThreatLevel.SAFE) return@launch    // safe links are only saved to History
 
-            val isDangerous = Math.random() > 0.6
-            val threat = if (isDangerous) ThreatLevel.DANGER else ThreatLevel.SAFE
-            val details = if (isDangerous) {
-                "THREAT DETECTED: This link has been reported as malicious. Do not click or share."
-            } else {
-                "Link appears safe based on our database."
-            }
-
-            val newResult = ScanResult(
+            threatAlertSource = res.source
+            threatAlertData = ScanResult(
                 id = System.currentTimeMillis().toString(),
-                type = ScanType.URL,
+                type = outcome.kind,
                 content = url,
-                threat = threat,
+                threat = outcome.threat,
                 timestamp = System.currentTimeMillis(),
-                details = details
+                details = outcome.reasons.take(2).joinToString("; ") { it.detail },
+                reasons = outcome.reasons,
+                infoLines = outcome.infoLines + "Found in your clipboard (Auto-Protection)",
+                googleStatus = if (res.source == ScanSource.FRESH) outcome.googleStatus else null
             )
-
-            // Update stats live during clipboard automated execution
-            scansToday++
-            if (threat == ThreatLevel.DANGER) {
-                threatsBlocked++
-            }
-
-            scanHistory.add(0, newResult)
-            threatAlertSource = ScanSource.FRESH
-            threatAlertData = newResult
             showThreatAlert = true
         }
     }
@@ -587,13 +621,23 @@ class AppStateViewModel(application: Application) : AndroidViewModel(application
             scanError = "Please enter something to scan"
             return
         }
+        val isPlus = subscriptionPlan == SubscriptionPlan.PLUS
+        // Free plan: 10 manual scans a day, on the phone only
+        if (!isPlus) {
+            refreshFreeScans()
+            if (freeScansLeft == 0) {
+                scanError = "Free plan: ${FreeScanLimit.PER_DAY} scans a day used up. Next scan in " +
+                    "${QuotaText.resetsIn(freeScansResetAt) ?: "a while"}, or upgrade to Prism Plus for unlimited scans."
+                return
+            }
+        }
         // Input kind (URL / text / phone number) is detected automatically by ManualScanAnalyzer.
         isScanning = true
 
         viewModelScope.launch {
             delay(300.milliseconds)
 
-            val advanced = subscriptionPlan == SubscriptionPlan.PLUS
+            val advanced = isPlus
             val repo = repoDeferred.await().second
             // Pipeline: blacklist -> whitelist -> cache -> heuristics + ML -> save (see ScanRepository)
             val blocked = repo.blacklistValues()   // lets the heuristic "blocklisted" rule see blocked URLs inside messages
@@ -604,6 +648,8 @@ class AppStateViewModel(application: Application) : AndroidViewModel(application
             val token = sharedPrefs.getString("prism_token", null)
             val res = repo.scan(input) { text ->
                 val manual = ManualScanAnalyzer.analyze(text, urlModel, advanced, blocked)
+                // The Google (Premium) check is Plus only; Free gets the on-device scan alone
+                if (!isPlus) return@scan manual.copy(googleStatus = GoogleStatus.PLUS_ONLY)
                 CombinedScan.run(manual) { links ->
                     if (token == null) throw ApiException("unauthorized", "please log in again")
                     // Already known to be used up (and not reset yet): do not even ask the server
@@ -648,6 +694,7 @@ class AppStateViewModel(application: Application) : AndroidViewModel(application
                 }
             }
             // History and the dashboard numbers update themselves from the database flows.
+            if (!isPlus) recordFreeScan()      // every Free manual scan uses one of today's 10
             isScanning = false
             scanInput = ""
 
@@ -737,5 +784,10 @@ class AppStateViewModel(application: Application) : AndroidViewModel(application
             ThreatLevel.WARNING -> 0xFFFEFCE8
             ThreatLevel.DANGER -> 0xFFFEF2F2
         }
+    }
+
+    private companion object {
+        // A copied link waits for Google only briefly; if it is slow the on-device verdict is used
+        const val CLIPBOARD_GOOGLE_TIMEOUT_MS = 5_000
     }
 }

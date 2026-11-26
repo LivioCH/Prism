@@ -53,8 +53,8 @@ fun SettingsTab(
                     text = when {
                         !isPlus -> "Members only. Tap to upgrade to Plus"
                         !screenMonitoringEnabled -> "Turn on AI Screen Monitoring first"
-                        autoProtectionOn -> "On: links you open are also checked by Google"
-                        else -> "Off: links you open get the Normal scan only"
+                        autoProtectionOn -> "On: links you open or copy are checked, with Google"
+                        else -> "Off: only your manual scans are checked"
                     },
                     fontSize = 12.sp,
                     color = if (isPlus && !screenMonitoringEnabled) Color(0xFFDC2626) else Color(0xFF6B7280)
@@ -65,7 +65,8 @@ fun SettingsTab(
         }
     }
 
-    ScreenMonitoringCard(enabled = screenMonitoringEnabled, warning = monitoringWarning)
+    // Screen monitoring only works for Plus (part of Auto-Protection), so Free does not see the card
+    if (isPlus) ScreenMonitoringCard(enabled = screenMonitoringEnabled, warning = monitoringWarning)
 
     GoogleStatusCard(googleActive)
 }

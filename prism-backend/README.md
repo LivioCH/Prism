@@ -53,7 +53,7 @@ All `/api/*` routes except `/api/auth/*` need `Authorization: Bearer <token>`. E
 
 ### Plan rules (edit in `src/config.js`)
 
-- **FREE**: unlimited scans and the Premium (Google) check by default. Set `FREE_DAILY_SCAN_LIMIT=10` to bring back the old limit of 10 per rolling 24h (429 `daily_limit`); history of last 24h, no message scanning, no clipboard scans (403 `upgrade_required`).
+- **FREE**: manual scans on the phone only, 10 per rolling 24h (the app counts them; `/api/scans` answers 429 `daily_limit` after 10; change with `FREE_DAILY_SCAN_LIMIT`). No Google check (`/api/scans/webrisk` answers 403 `upgrade_required`, `feature: "google_check"`; `/api/quota` says `included: false`), no Auto-Protection, history of last 24h, no message scanning, no clipboard scans.
 - **PLUS**: unlimited, full history, message scanning, clipboard scans, extra typosquat detection.
 
 Scanning before picking a plan returns 402 `plan_required`.

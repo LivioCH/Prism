@@ -128,6 +128,9 @@ class PhishingDetectionService : AccessibilityService() {
     // Event handling
     // ---------------------------------------------------------------------------------------
 
+    private fun isPlusMember(): Boolean =
+        getSharedPreferences("prism_prefs", MODE_PRIVATE).getString("prism_plan", null) == "PLUS"
+
     private fun handleEvent(event: AccessibilityEvent) {
         val sourcePackage = event.packageName?.toString() ?: return
 
@@ -138,6 +141,8 @@ class PhishingDetectionService : AccessibilityService() {
 
         val shieldSettings = settings ?: return
         if (!shieldSettings.monitorAllApps && !MonitoredApps.isMonitored(sourcePackage)) return
+        // Screen monitoring is part of Auto-Protection, a Plus feature: Free members only get manual scans
+        if (!isPlusMember()) return
 
         when (event.eventType) {
             AccessibilityEvent.TYPE_VIEW_CLICKED -> handleClick(event, sourcePackage)

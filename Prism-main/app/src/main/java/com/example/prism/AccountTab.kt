@@ -122,9 +122,9 @@ fun AccountTab(
                 }
             }
 
-            PlanLine(included = true, text = "Unlimited scans + Google Premium check")
-            PlanLine(included = true, text = "AI Screen Monitoring")
-            PlanLine(included = isPlus, text = "Auto-Protection (Google check on opened links)")
+            PlanLine(included = true, text = if (isPlus) "Unlimited manual scans" else "Manual scan on your phone, 10 a day")
+            PlanLine(included = isPlus, text = "Google Web Risk check on every scan")
+            PlanLine(included = isPlus, text = "Auto-Protection: links on screen and copied links")
             PlanLine(included = isPlus, text = "Advanced detection & full history")
 
             Button(

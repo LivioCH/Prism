@@ -9,7 +9,10 @@ import { DAY_MS, PLANS } from './config.js';
  * resetsAt (epoch ms) is when the oldest counted scan leaves the 24h window, freeing one check.
  */
 export function googleQuota(db, user, now = Date.now()) {
-  const limit = PLANS[user.plan ?? 'FREE'].dailyScanLimit;
+  const plan = PLANS[user.plan ?? 'FREE'];
+  // Free has no Google checks at all
+  if (!plan.googleCheck) return { unlimited: false, included: false, limit: 0, used: 0, remaining: 0, resetsAt: null };
+  const limit = plan.dailyScanLimit;
   if (limit === Infinity) return { unlimited: true, limit: null, used: 0, remaining: null, resetsAt: null };
   const row = db
     .prepare('SELECT COUNT(*) AS c, MIN(created_at) AS oldest FROM scans WHERE user_id = ? AND created_at > ?')

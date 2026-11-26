@@ -22,16 +22,23 @@ const call = async (method, path, { token, body } = {}) => {
   const text = await res.text();
   return { status: res.status, json: text ? JSON.parse(text) : null };
 };
+const newUser = async (email, plan) => {
+  const s = await call('POST', '/api/auth/signup', { body: { name: 'U', email, password: 'secret1' } });
+  await call('PUT', '/api/subscription', { token: s.json.token, body: { plan } });
+  return s.json.token;
+};
 
-test('by default the Free plan has the Google check with no daily limit', async () => {
-  const s = await call('POST', '/api/auth/signup', { body: { name: 'F', email: 'free@example.com', password: 'secret1' } });
-  const token = s.json.token;
-  await call('PUT', '/api/subscription', { token, body: { plan: 'FREE' } });
+test('by default Free has no Google check at all', async () => {
+  const token = await newUser('free@example.com', 'FREE');
+  assert.equal((await call('GET', '/api/quota', { token })).json.quota.included, false);
+  assert.equal((await call('POST', '/api/scans/webrisk', { token, body: { text: 'https://a.example.com' } })).status, 403);
+});
 
+test('Plus has the Google check with no daily limit', async () => {
+  const token = await newUser('plus@example.com', 'PLUS');
   assert.equal((await call('GET', '/api/quota', { token })).json.quota.unlimited, true);
   for (let i = 0; i < 15; i++) {
     const r = await call('POST', '/api/scans/webrisk', { token, body: { text: `https://site${i}.example.com` } });
     assert.equal(r.status, 201, `check ${i + 1} must not be limited`);
   }
-  assert.equal((await call('GET', '/api/quota', { token })).json.quota.unlimited, true);
 });

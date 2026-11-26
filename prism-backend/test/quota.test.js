@@ -30,32 +30,29 @@ const newUser = async (plan) => {
   return s.json.token;
 };
 
-test('a Free user starts with 10 Premium checks and each Google check uses one', async () => {
+test('a Free user has no Google checks: quota says not included', async () => {
   const token = await newUser('FREE');
   const q0 = (await call('GET', '/api/quota', { token })).json.quota;
-  assert.deepEqual(q0, { unlimited: false, limit: 10, used: 0, remaining: 10, resetsAt: null });
-
-  const r = await call('POST', '/api/scans/webrisk', { token, body: { text: 'https://example.com' } });
-  assert.equal(r.status, 201);
-  assert.equal(r.json.quota.remaining, 9);
-  assert.equal(r.json.quota.used, 1);
-  assert.ok(r.json.quota.resetsAt > Date.now());
-
-  assert.equal((await call('GET', '/api/quota', { token })).json.quota.remaining, 9, 'GET /api/quota agrees');
+  assert.deepEqual(q0, { unlimited: false, included: false, limit: 0, used: 0, remaining: 0, resetsAt: null });
 });
 
-test('when the 10 are used up the server answers 429 with resetsAt, and quota says 0 left', async () => {
+test('a Free user asking for a Google check gets 403 upgrade_required, and nothing is saved', async () => {
+  const token = await newUser('FREE');
+  const r = await call('POST', '/api/scans/webrisk', { token, body: { text: 'https://example.com' } });
+  assert.equal(r.status, 403);
+  assert.equal(r.json.error.code, 'upgrade_required');
+  assert.equal(r.json.error.feature, 'google_check');
+  assert.equal((await call('GET', '/api/scans', { token })).json.scans.length, 0);
+});
+
+test('Free manual scans on the server stop at 10 a day (429 daily_limit)', async () => {
   const token = await newUser('FREE');
   for (let i = 0; i < 10; i++) {
-    assert.equal((await call('POST', '/api/scans/webrisk', { token, body: { text: `https://site${i}.example.com` } })).status, 201);
+    assert.equal((await call('POST', '/api/scans', { token, body: { type: 'url', content: `https://site${i}.example.com` } })).status, 201);
   }
-  assert.equal((await call('GET', '/api/quota', { token })).json.quota.remaining, 0);
-
-  const over = await call('POST', '/api/scans/webrisk', { token, body: { text: 'https://one-more.example.com' } });
+  const over = await call('POST', '/api/scans', { token, body: { type: 'url', content: 'https://one-more.example.com' } });
   assert.equal(over.status, 429);
   assert.equal(over.json.error.code, 'daily_limit');
-  assert.equal(over.json.error.limit, 10);
-  assert.ok(over.json.error.resetsAt > Date.now(), 'tells the app when a check frees up');
 });
 
 test('Plus is unlimited', async () => {

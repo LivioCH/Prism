@@ -16,7 +16,8 @@ enum class GoogleStatus {
     NOT_APPLICABLE,   // nothing for Google to check (phone number, text without links) or not asked
     CHECKED,          // Google answered
     LIMIT_REACHED,    // Free plan: today's Premium checks are used up, Normal scan only
-    UNAVAILABLE       // offline / backend or Google down, Normal scan only
+    UNAVAILABLE,      // offline / backend or Google down, Normal scan only
+    PLUS_ONLY         // Free plan: the Google check is a Plus feature, Normal scan only
 }
 
 /** How the online Google Web Risk check went for one scan. */

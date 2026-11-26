@@ -22,14 +22,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.prism.net.GoogleQuota
+import com.example.prism.scan.FreeScanLimit
 import com.example.prism.scan.QuotaText
 
 /**
- * Scan tab: the two scan engines and what is left of the Premium check.
+ * Scan tab: the two scan engines.
  *
- *  - Normal scan: on the phone, every scan, for everyone.
- *  - Premium check: Google Web Risk for the links in a scan. Plus: unlimited. Free: a few a day;
- *    when they are used up the scan simply continues as a Normal scan.
+ *  - Normal scan: on the phone. Plus: unlimited. Free: 10 a day.
+ *  - Premium check: Google Web Risk for the links in a scan. Plus only (unlimited).
  */
 @Composable
 fun ScanEngineStatus(
@@ -37,15 +37,21 @@ fun ScanEngineStatus(
     quota: GoogleQuota?,
     quotaUnreachable: Boolean,
     premiumUnavailable: Boolean,
-    onUpgrade: () -> Unit
+    onUpgrade: () -> Unit,
+    freeScansLeft: Int = 0,
+    freeScansResetAt: Long? = null
 ) {
+    if (!isPlus) {
+        FreeEngineStatus(freeScansLeft, freeScansResetAt, onUpgrade)
+        return
+    }
     val unlimited = quota?.unlimited ?: isPlus
     val exhausted = quota?.exhausted == true && !unlimited
 
     Column(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         EngineRow(
             icon = "📱", title = "Normal scan", subtitle = "Runs on your phone",
-            pill = "ALWAYS ON", pillBg = Color(0xFFDCFCE7), pillFg = Color(0xFF15803D)
+            pill = "UNLIMITED", pillBg = Color(0xFFDCFCE7), pillFg = Color(0xFF15803D)
         )
 
         val (pill, bg, fg) = when {
@@ -93,6 +99,37 @@ fun ScanEngineStatus(
     }
 }
 
+/** Free plan: Normal scan only, 10 a day; the Google check is shown as a Plus feature. */
+@Composable
+private fun FreeEngineStatus(left: Int, resetAt: Long?, onUpgrade: () -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        val (pill, bg, fg) = when {
+            left == 0 -> Triple("0 LEFT", Color(0xFFFEE2E2), Color(0xFFB91C1C))
+            left <= 3 -> Triple("$left OF ${FreeScanLimit.PER_DAY} LEFT", Color(0xFFFEF3C7), Color(0xFFB45309))
+            else -> Triple("$left OF ${FreeScanLimit.PER_DAY} LEFT", Color(0xFFDCFCE7), Color(0xFF15803D))
+        }
+        EngineRow(icon = "📱", title = "Normal scan", subtitle = "Runs on your phone", pill = pill, pillBg = bg, pillFg = fg)
+        EngineRow(
+            icon = "🌐", title = "Premium check", subtitle = "Checks links with Google",
+            pill = "PLUS ONLY", pillBg = Color(0xFFF3F4F6), pillFg = Color(0xFF6B7280)
+        )
+        Text(
+            text = if (left == 0) {
+                "Free scans used up for today. Next one in ${QuotaText.resetsIn(resetAt) ?: "a while"}."
+            } else {
+                "Free plan: ${FreeScanLimit.PER_DAY} scans a day on your phone."
+            },
+            fontSize = 11.sp,
+            color = if (left == 0) Color(0xFFB91C1C) else Color(0xFF9CA3AF)
+        )
+        Text(
+            text = "Upgrade to Plus: unlimited scans, Google check and Auto-Protection",
+            fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7E22CE),
+            modifier = Modifier.clickable { onUpgrade() }
+        )
+    }
+}
+
 @Composable
 private fun EngineRow(icon: String, title: String, subtitle: String, pill: String, pillBg: Color, pillFg: Color) {
     Row(
@@ -130,6 +167,7 @@ fun EngineChips(engine: String, quotaLine: String?) {
                     "premium" -> Chip("🌐 Premium check ✓", Color(0xFFF3E8FF), Color(0xFF7E22CE))
                     "limit" -> Chip("🌐 Premium check used up", Color(0xFFFEE2E2), Color(0xFFB91C1C))
                     "unavailable" -> Chip("🌐 Premium check unavailable", Color(0xFFFEF3C7), Color(0xFFB45309))
+                    "plus_only" -> Chip("🌐 Premium check: Plus only", Color(0xFFF3F4F6), Color(0xFF6B7280))
                     else -> Chip("🌐 Premium check: no links", Color(0xFFF3F4F6), Color(0xFF6B7280))
                 }
             }

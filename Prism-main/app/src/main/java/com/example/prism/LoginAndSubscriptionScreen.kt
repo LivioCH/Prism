@@ -311,8 +311,8 @@ fun SubscriptionPlanDialog(
                                 }
                                 Spacer(modifier = Modifier.height(12.dp))
                                 Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(bottom = 12.dp)) {
-                                    FeatureRow(text = "Basic URL & phone scanning", iconColor = Color(0xFF16A34A))
-                                    FeatureRow(text = "Unlimited scans + Google Premium check", iconColor = Color(0xFF16A34A))
+                                    FeatureRow(text = "Manual scan on your phone (URL, phone, message)", iconColor = Color(0xFF16A34A))
+                                    FeatureRow(text = "10 scans per day", iconColor = Color(0xFF16A34A))
                                     FeatureRow(text = "Scan history (last 24 hours)", iconColor = Color(0xFF16A34A))
                                     FeatureRow(text = "Basic protection tips", iconColor = Color(0xFF16A34A))
                                 }
@@ -381,8 +381,10 @@ fun SubscriptionPlanDialog(
 
                                 Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(bottom = 12.dp)) {
                                     FeatureRow(text = "Everything in Free, plus:", iconColor = Color(0xFF9333EA), isBold = true)
+                                    FeatureRow(text = "Unlimited manual scans", iconColor = Color(0xFF9333EA))
+                                    FeatureRow(text = "Google Web Risk check on every scan", iconColor = Color(0xFF9333EA))
+                                    FeatureRow(text = "Auto-Protection: links on screen and copied links", iconColor = Color(0xFF9333EA))
                                     FeatureRow(text = "Advanced AI threat detection", iconColor = Color(0xFF9333EA))
-                                    FeatureRow(text = "Auto-Protection (Google check on opened links)", iconColor = Color(0xFF9333EA))
                                     FeatureRow(text = "Complete scan history", iconColor = Color(0xFF9333EA))
                                     FeatureRow(text = "Priority support", iconColor = Color(0xFF9333EA))
                                 }
@@ -443,7 +445,9 @@ fun DashboardScreen(
     googleApiContent: @Composable () -> Unit = {},  // the "Google API key" screen (admin only)
     googleQuota: com.example.prism.net.GoogleQuota? = null,   // Premium checks left today (null = unknown)
     quotaUnreachable: Boolean = false,
-    premiumUnavailable: Boolean = false
+    premiumUnavailable: Boolean = false,
+    freeScansLeft: Int = 0,                          // Free plan: manual scans left today (of 10)
+    freeScansResetAt: Long? = null                   // when the next Free scan frees up
 ) {
     val isPlus = subscriptionPlan == SubscriptionPlan.PLUS
 
@@ -701,7 +705,7 @@ fun DashboardScreen(
                                     Column {
                                         Text(text = "Auto-Protection", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
                                         Text(
-                                            text = if (isPlus) "Google checks links you open" else "Members only · tap to upgrade",
+                                            text = if (isPlus) "Google checks links you open or copy" else "Members only · tap to upgrade",
                                             fontSize = 12.sp,
                                             color = Color(0xFFDBEAFE)
                                         )
@@ -738,12 +742,13 @@ fun DashboardScreen(
                                         label = "Alpha"
                                     )
                                     Box(modifier = Modifier.size(8.dp).background(Color(0xFF4ADE80).copy(alpha = pulseAlpha), CircleShape))
-                                    Text(text = "Google checks the links you open", fontSize = 12.sp, color = Color(0xFFDBEAFE))
+                                    Text(text = "Google checks the links you open or copy", fontSize = 12.sp, color = Color(0xFFDBEAFE))
                                 }
                             }
                         }
 
-                        ScreenMonitoringCard(enabled = screenMonitoringEnabled, warning = monitoringWarning)
+                        // Screen monitoring only works for Plus (part of Auto-Protection), so Free does not see the card
+                        if (isPlus) ScreenMonitoringCard(enabled = screenMonitoringEnabled, warning = monitoringWarning)
 
                         Card(
                             modifier = Modifier.fillMaxWidth(),
@@ -753,7 +758,25 @@ fun DashboardScreen(
                         ) {
                             Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
                                 // (the Google ON/OFF status moved to the header, see GoogleHeaderChip)
-                                Text(text = "Manual Scan", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF111827), modifier = Modifier.padding(bottom = 16.dp))
+                                Text(text = "Manual Scan", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF111827), modifier = Modifier.padding(bottom = if (isPlus) 16.dp else 4.dp))
+                                // Free plan: 10 scans a day on the phone, no Google check
+                                if (!isPlus) {
+                                    Text(
+                                        text = if (freeScansLeft == 0) {
+                                            "Free scans used up for today. Next one in ${com.example.prism.scan.QuotaText.resetsIn(freeScansResetAt) ?: "a while"}."
+                                        } else {
+                                            "Free plan: $freeScansLeft of ${com.example.prism.scan.FreeScanLimit.PER_DAY} scans left today (on your phone, no Google check)"
+                                        },
+                                        fontSize = 12.sp,
+                                        color = if (freeScansLeft == 0) Color(0xFFB91C1C) else Color(0xFF6B7280),
+                                        modifier = Modifier.padding(bottom = 4.dp)
+                                    )
+                                    Text(
+                                        text = "Upgrade to Plus: unlimited scans, Google check and Auto-Protection",
+                                        fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7E22CE),
+                                        modifier = Modifier.padding(bottom = 16.dp).clickable { onRequestUpgrade() }
+                                    )
+                                }
                                 // "Normal scan / Premium check" status rows: hidden, not deleted (see SHOW_ENGINE_BADGES)
                                 if (SHOW_ENGINE_BADGES) {
                                     Spacer(modifier = Modifier.height(10.dp))
@@ -762,7 +785,9 @@ fun DashboardScreen(
                                         quota = googleQuota,
                                         quotaUnreachable = quotaUnreachable,
                                         premiumUnavailable = premiumUnavailable,
-                                        onUpgrade = onRequestUpgrade
+                                        onUpgrade = onRequestUpgrade,
+                                        freeScansLeft = freeScansLeft,
+                                        freeScansResetAt = freeScansResetAt
                                     )
                                 }
 
